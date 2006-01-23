@@ -1,0 +1,6 @@
+The directory "pcMonitorApp" contains the PC monitoring project
+Before you start set the variables in the setup file and type 
+the commands as following:
+. ./setup
+cd pcMonitorApp/src
+less README.txt
