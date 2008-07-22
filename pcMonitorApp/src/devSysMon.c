@@ -209,38 +209,45 @@ static long read_avg_load(pAiIn)
 
 double getAvgLoad(char * parm){
  
-  FILE *proc_file;
+  /* FILE *proc_file;
   double avg1min=0;
   double avg5min=0;
   double avg15min=0;
   char str1[30]="";
-  char str2[30]="";
+  char str2[30]=""; */
   double val=0;
 
-  if((proc_file=fopen("/proc/loadavg","r"))==NULL)
+  double avg[3];
+
+  if(getloadavg(avg,sizeof(avg))<0)
+    { fprintf(stderr,"load avearage was unobtainable.\n");
+      return val; /* before exit(127); */
+    } 
+
+  /* if((proc_file=fopen("/proc/loadavg","r"))==NULL)
     { fprintf(stderr,"Cannot open /proc/loadavg for reading!\n");
-    return val; /* before exit(127); */
+    return val; 
     } 
   
-  fscanf(proc_file,"%lf %lf %lf %s %s",&avg1min,&avg5min,&avg15min,str1,str2);
+    fscanf(proc_file,"%lf %lf %lf %s %s",&avg1min,&avg5min,&avg15min,str1,str2); */
   
 
   if(!strcmp(parm,"1min")){
-    /* printf("1min\n"); */
-    val=avg1min;
+    val=avg[0];
+    /* val=avg1min; */
   }
   else if(!strcmp(parm,"5min")){
-    /* printf("5min\n"); */
-    val=avg5min;
+     val=avg[1];
+     /* val=avg5min;*/
   }	
   else{
-    /* printf("15min\n"); */
-    val=avg15min;
-  }
+     val=avg[2];
+     /* val=avg15min;*/
+    } 
 
-  /* printf("val %f %f\n",val,avg1min); */
+  
 
-	  fclose(proc_file);
+  /* fclose(proc_file);*/
 	  return val;
 }
 
@@ -752,13 +759,13 @@ static long read_uptime_Info(pStringIn)
       }
       else{
 	if(!strcmp(pvmeio->parm,"SYSNAME"))
-	  sprintf(pStringIn->val,"%s",name.sysname);
+	  sprintf(pStringIn->val,"%.*s",sizeof(pStringIn->val)-1,name.sysname);
       else if(!strcmp(pvmeio->parm,"RELEASE"))
-	sprintf(pStringIn->val,"%s",name.release);
+	sprintf(pStringIn->val,"%.*s",sizeof(pStringIn->val)-1,name.release);
       else if(!strcmp(pvmeio->parm,"VERSION"))
-	sprintf(pStringIn->val,"%s",name.version);
+	sprintf(pStringIn->val,"%.*s",sizeof(pStringIn->val)-1,name.version);
       else if(!strcmp(pvmeio->parm,"MACHINE"))
-	sprintf(pStringIn->val,"%s",name.machine);
+	sprintf(pStringIn->val,"%.*s",sizeof(pStringIn->val)-1,name.machine);
       }
        
       /* if(!status) */ pStringIn->udf = FALSE;

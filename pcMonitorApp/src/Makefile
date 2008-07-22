@@ -8,30 +8,33 @@ include $(TOP)/configure/CONFIG
 #==================================================
 # Build an IOC support library
 
-LIBRARY_IOC += xxxSupport
+#LIBRARY_IOC += xxxSupport
 
 # xxxRecord.h will be created from xxxRecord.dbd
-DBDINC += xxxRecord
+#DBDINC += xxxRecord
 # install devXxxSoft.dbd into <top>/dbd
-DBD += xxxSupport.dbd
+#DBD += xxxSupport.dbd
 
 # The following are compiled and added to the Support library
-xxxSupport_SRCS += xxxRecord.c
-xxxSupport_SRCS += devXxxSoft.c
-xxxSupport_SRCS += devSysMon.c
+#xxxSupport_SRCS += xxxRecord.c
+#xxxSupport_SRCS += devXxxSoft.c
+#xxxSupport_SRCS += devSysMon.c
 
-xxxSupport_LIBS += $(EPICS_BASE_IOC_LIBS)
+#xxxSupport_LIBS += $(EPICS_BASE_IOC_LIBS)
 
 #=============================
 # build an ioc application
 
-PROD_IOC = pcMonitor
+PROD_HOST = pcMonitor
+#PROD_IOC is used to complie things for all architectures
+#PROD_IOC = pcMonitor
 # pcMonitor.dbd will be created and installed
-DBD += pcMonitor.dbd
+#pcMonitor_DBD += pcMonitor.dbd
 
 # pcMonitor.dbd will be made up from these files:
+DBD += pcMonitor.dbd
 pcMonitor_DBD += base.dbd
-pcMonitor_DBD += xxxSupport.dbd
+#pcMonitor_DBD += xxxSupport.dbd
 pcMonitor_DBD += dbSubExample.dbd
 pcMonitor_DBD += pcDB.dbd
 
@@ -42,11 +45,11 @@ pcMonitor_SRCS_vxWorks += -nil-
 
 # Add locally compiled object code
 pcMonitor_SRCS += dbSubExample.c
-
+pcMonitor_SRCS += devSysMon.c
 # The following adds support from base/src/vxWorks
-pcMonitor_OBJS_vxWorks += $(EPICS_BASE_BIN)/vxComLibrary
+OBJS_vxWorks += $(EPICS_BASE_BIN)/vxComLibrary
 
-pcMonitor_LIBS += xxxSupport
+#pcMonitor_LIBS += xxxSupport
 
 # NOTE: To build SNL programs, SNCSEQ must be defined
 # in the <top>/configure/RELEASE file

@@ -30,4 +30,4 @@ O.linux-x86/pcMonitor pcMonitor.script
 
 # This project was created by Miroslaw Dach SLS/PSI 2006
 # In case of problems please send an e-mail to the author
-# dach@psi.ch
+# miroslaw.dach@psi.ch
