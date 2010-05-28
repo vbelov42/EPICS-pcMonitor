@@ -642,28 +642,6 @@ static long read_MEM_load(pAiIn)
     return(2); /* no convertion fron rval to val */
 }
 
-/*-------------- get IP address ---------------------------*/
-
-unsigned long myIpAddr(void)
-{
-  int s;
-  unsigned long r;
-  struct ifreq ifr;
-  
-  if ((s=socket(AF_INET, SOCK_DGRAM, 0)) < 0)
-    return 0;
-
-  strcpy(ifr.ifr_name, "eth0");
-  
-  if (ioctl(s, SIOCGIFADDR, &ifr))
-      r = 0;
-  else
-      r = ((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr;
-
-  close(s);
-  return r;
-}
-
 static long init_record_IP();
 static long read_uptime_IP();
 struct {
@@ -696,22 +674,24 @@ static long init_record_IP(pStringIn)
 static long read_uptime_IP(pStringIn)
     struct stringinRecord    *pStringIn;
 {
-  /*     long status; */
-    long iPAddr=0;
+  int s;
+  struct ifreq ifr;
+  unsigned long iPAddr;
 
-    /* status = dbGetLink(&(pStringIn->inp),DBF_STRING, &(pStringIn->val),0,0); */
-    /*If return was succesful then set undefined false*/
-    /* sprintf(pStringIn->val,"ala %d",get_uptime()); */
-    iPAddr=myIpAddr();
+  if ((s=socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+    return 0;
 
-    sprintf(pStringIn->val,"%lu:%lu:%lu:%lu",iPAddr%256,(iPAddr/256)%256,(iPAddr/65536)%256,(iPAddr/16777216)%256);
-       
+   strcpy(ifr.ifr_name, "eth0");
+
+  if (! ioctl(s, SIOCGIFADDR, &ifr))
+    {
+     iPAddr=((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr;
+     sprintf(pStringIn->val,"%lu:%lu:%lu:%lu",iPAddr%256,(iPAddr/256)%256,(iPAddr/65536)%256,(iPAddr/16777216)%256);
+    }
+    close(s);
     /* if(!status)*/  pStringIn->udf = FALSE;
     return(0);
 }
-
-
-
 /*-------------- get host info ---------------------------*/
 
 static long init_record_Info();
@@ -771,30 +751,4 @@ static long read_uptime_Info(pStringIn)
       /* if(!status) */ pStringIn->udf = FALSE;
     return(0);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
