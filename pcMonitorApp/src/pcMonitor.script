@@ -1,5 +1,5 @@
 dbLoadDatabase("./O.Common/pcMonitor.dbd",0,0)
-pcMonitor_registerRecordDeviceDriver
+pcMonitor_registerRecordDeviceDriver pdbbase
 #registerRecordDeviceDriver(pdbbase)
 dbLoadTemplate("pcMonitor.subs")
 iocInit()

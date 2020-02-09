@@ -3,6 +3,7 @@
 dbLoadDatabase("../../dbd/pcMonitor.dbd",0,0)
 pcMonitor_registerRecordDeviceDriver
 #---------- put your stuff here --------------
+# usually dbLoadTemplate and such
 < startup.script_BOOTPC-MONITORING
 
 #----------  end of your stuff  --------------

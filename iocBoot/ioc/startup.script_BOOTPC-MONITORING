@@ -1,3 +1,0 @@
-#This is an automatically generated startup script
-cd "/ioc/AGADI-PC-xxxx"
-dbLoadTemplate("AGADI-PC-xxxx_status.subs")
