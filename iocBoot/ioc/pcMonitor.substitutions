@@ -1,0 +1,4 @@
+file "pcMonitor.template"
+{
+  { BOOTPC = "PC-MONITOR" }
+}

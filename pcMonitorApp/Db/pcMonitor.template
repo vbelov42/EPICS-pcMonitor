@@ -273,6 +273,11 @@ record(calc, "$(BOOTPC):LOAD")
 	field(INPC, "$(BOOTPC):CPUSYSTEM")
 	field(CALC, "A + B + C")
 	field(EGU, "%")
+	field(HOPR, "100")
+	field(HIHI, "90")
+	field(HIGH, "70")
+	field(HHSV, "MAJOR")
+	field(HSV,  "MINOR")
 }
 
 #-------------------------------------------------

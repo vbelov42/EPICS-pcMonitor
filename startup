@@ -1,0 +1,24 @@
+#/bin/bash
+
+program="pcMonitor"
+filename=`readlink -f "${BASH_SOURCE[0]}"`
+basedir=`dirname "${filename}"`
+binary="$basedir/bin/linux-x86_64/${program}"
+
+"${binary}" <<__EOF__
+#
+epicsEnvSet("IOC","${program}")
+epicsEnvSet("TOP","${basedir}")
+epicsEnvSet("EPICS_BASE","${EPICS_BASE}")
+
+## Register all support components
+dbLoadDatabase("\${TOP}/dbd/${program}.dbd", 0, 0)
+${program}_registerRecordDeviceDriver pdbbase
+
+## Load record instances
+dbLoadRecords("\${TOP}/db/pcMonitor.template","BOOTPC=sys")
+
+iocInit
+
+__EOF__
+
