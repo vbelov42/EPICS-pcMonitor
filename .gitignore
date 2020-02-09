@@ -1,0 +1,8 @@
+# build files
+O.*
+bin
+db
+dbd
+lib
+# development files
+*~
