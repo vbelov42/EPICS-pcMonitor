@@ -105,6 +105,16 @@ record(ai, "$(BOOTPC):MEMBUFF")
 	field(PREC,"0")
         field(INP, "#C0 S0 @MEMBUFF")
 	field(EGU, "KB")
+	field(FLNK,"$(BOOTPC):MEMCACH")
+}
+
+record(ai, "$(BOOTPC):MEMCACH")
+{
+        field(DESC, "Avg Load")
+        field(DTYP, "MemLoad")
+	field(PREC,"0")
+        field(INP, "#C0 S0 @MEMCACH")
+	field(EGU, "KB")
 	field(FLNK,"$(BOOTPC):SWAPAV")
 }
 

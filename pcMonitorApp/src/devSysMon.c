@@ -31,7 +31,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include "/usr/include/linux/version.h"
+//#include "/usr/include/linux/version.h"
+#include <errno.h>
 
 #include <sys/time.h>
 #include <time.h>
@@ -44,6 +45,38 @@
 #include <sys/utsname.h>
 /* in vesrion 3.14.7 #include "epicsExport.h" */
 #include "epicsExport.h"
+
+/*------------------------- Common definitions and functions ------------------*/
+
+typedef epicsUInt64  counter_t; /* 32 bits are not enough on modern systems */
+typedef epicsFloat64 avalue_t; /* analog */
+typedef epicsInt32   bvalue_t; /* binary */
+typedef struct { avalue_t val; } GAUGE;
+typedef struct { counter_t cnt; avalue_t val; } COUNTER;
+#define LINE_SIZE 256
+typedef long (*PROCESSFUN)(int iter);
+
+static long read_ai(aiRecord *prec)
+{
+  if (!prec->dpvt)
+    return S_dev_NoInit;
+  const char *opt = prec->inp.value.vmeio.parm;
+  if (opt[0]=='P' && opt[1]=='R' && opt[2]=='O' && opt[3]=='C')
+    ((PROCESSFUN)prec->dpvt)(1);
+  else
+    prec->val = *(double*)prec->dpvt;
+  return 2; /* don't convert */
+}
+static long read_si(stringinRecord *prec)
+{
+  if (!prec->dpvt)
+    return S_dev_NoInit;
+  if (strcmp(prec->inp.value.vmeio.parm,"PROC")==0)
+    ((PROCESSFUN)prec->dpvt)(1);
+  else
+    strncpy(prec->val,(char*)prec->dpvt,sizeof(prec->val));
+  return 0;
+}
 
 static int get_uptime(void);           /* get formated time from /proc/uptime */
 static void format_uptime(char *str1); /* set formated up time in str1 */
@@ -251,203 +284,13 @@ double getAvgLoad(char * parm){
 	  return val;
 }
 
-/*-------------------------------------------------------------------*/
-/*        CPU and MEMory usage functions                             */
-/*-------------------------------------------------------------------*/
-
-#define BAD_OPEN_MESSAGE					\
-"Error: /proc must be mounted\n"				\
-"  To mount /proc at boot you need an /etc/fstab line like:\n"	\
-"      /proc   /proc   proc    defaults\n"			\
-"  In the meantime, mount /proc /proc -t proc\n"
-
-
-#define STAT_FILE    "/proc/stat"
-static int stat_fd = -1;
-#define MEMINFO_FILE "/proc/meminfo"
-static int meminfo_fd = -1;
-static int iFile2BufStstus = -1; 
-static char buf[1024];
-/* int show_memory = 1;    show memory summary */
-/*        iFile2BufStstus = -1;                                   \
-	return -1; before _exit(1); 	      		\ */
-
-#define FILE_TO_BUF(filename, fd) do{				\
-    static int n;						\
-    iFile2BufStstus = 0;                                        \
-    if (fd == -1 && (fd = open(filename, O_RDONLY)) == -1) {	\
-	fprintf(stderr, BAD_OPEN_MESSAGE);			\
-	close(fd);						\
-        iFile2BufStstus = -1;                                   \
-	return 0; /* before _exit(1); */       		\
-    }								\
-    lseek(fd, 0L, SEEK_SET);					\
-    if ((n = read(fd, buf, sizeof buf - 1)) < 0) {		\
-	perror(filename);					\
-	close(fd);						\
-	fd = -1;						\
-	return 0;						\
-    }								\
-    buf[n] = '\0';						\
-}while(0)
-
-#define SET_IF_DESIRED(x,y)  if(x) *(x) = (y)	/* evals 'x' twice */
-#define LINUX_VERSION(x,y,z)   (0x10000*(x) + 0x100*(y) + z)
-
-#define JT unsigned long
-int four_cpu_numbers(JT *uret, JT *nret, JT *sret, JT *iret) {
-    static JT u, n, s, i;
-    JT user_j, nice_j, sys_j, idle_j;
-    int iStatus=0;
-
-     FILE_TO_BUF(STAT_FILE,stat_fd);
-     if (iFile2BufStstus == -1)
-       return (-1);
-     sscanf(buf, "cpu %lu %lu %lu %lu", &user_j, &nice_j, &sys_j, &idle_j);
-       
-     if(user_j>=u) {
-      SET_IF_DESIRED(uret, user_j-u);
-     }
-    else{
-      SET_IF_DESIRED(uret, u-user_j);
-      iStatus=1;
-    }
-    
-     if(nice_j>=n){
-      SET_IF_DESIRED(nret, nice_j-n);
-     }
-    else{
-      SET_IF_DESIRED(nret, n-nice_j);
-      iStatus=1;
-    }
-
-     if(sys_j>=s){
-      SET_IF_DESIRED(sret,  sys_j-s);
-     }
-    else{
-      SET_IF_DESIRED(sret,  s-sys_j);
-      iStatus=1;
-    }
-
-     if(idle_j>=i){
-      SET_IF_DESIRED(iret, idle_j-i);
-     }
-    else{
-      SET_IF_DESIRED(iret, i-idle_j);
-      iStatus=1;
-    }
-
-    u=user_j;
-    n=nice_j;
-    s=sys_j;
-    i=idle_j;
-     
-    return iStatus;
-}
-#undef JT
-
-#define MAX_ROW 3	/* these are a little liberal for flexibility */
-#define MAX_COL 7
-
-enum meminfo_row { meminfo_main = 0,
-                   meminfo_swap };
-
-
-enum meminfo_col { meminfo_total = 0, meminfo_used, meminfo_free,
-                   meminfo_shared, meminfo_buffers, meminfo_cached
-};
-
-
-unsigned  long **meminfo(void){
-    static unsigned long *row[MAX_ROW + 1];		/* row pointers */
-    static unsigned long num[MAX_ROW * MAX_COL];	/* number storage */
-    char *p;
-    char fieldbuf[12];		/* bigger than any field name or size in kb */
-    int i, j, k, l;
-    int linux_version_code;
-    
-    linux_version_code=LINUX_VERSION_CODE;
-    FILE_TO_BUF(MEMINFO_FILE,meminfo_fd);
-      if (iFile2BufStstus == -1)
-	return NULL; 
-    if (!row[0])				/* init ptrs 1st time through */
-	for (i=0; i < MAX_ROW; i++)		/* std column major order: */
-	    row[i] = num + MAX_COL*i;		/* A[i][j] = A + COLS*i + j */
-    p = buf;
-    for (i=0; i < MAX_ROW; i++)			/* zero unassigned fields */
-	for (j=0; j < MAX_COL; j++)
-	    row[i][j] = 0;
-    if (linux_version_code < LINUX_VERSION(2,0,0)) {
-    	for (i=0; i < MAX_ROW && *p; i++) {                /* loop over rows */
-		while(*p && !isdigit(*p)) p++;          /* skip chars until a digit */
-		for (j=0; j < MAX_COL && *p; j++) {     /* scanf column-by-column */
-		    l = sscanf(p, "%lu%n", row[i] + j, &k);
-		    p += k;                             /* step over used buffer */
-		    if (*p == '\n' || l < 1)            /* end of line/buffer */
-			break;
-		}
-	}
-    }
-    else {
-	    while(*p) {
-	    	sscanf(p,"%11s%n",fieldbuf,&k);
-	    	if(!strcmp(fieldbuf,"MemTotal:")) {
-	    		p+=k;
-	    		sscanf(p," %lu",&(row[meminfo_main][meminfo_total]));
-	    		row[meminfo_main][meminfo_total]<<=10;
-	    		while(*p++ != '\n');
-	    	}
-	    	else if(!strcmp(fieldbuf,"MemFree:")) {
-	    		p+=k;
-	    		sscanf(p," %lu",&(row[meminfo_main][meminfo_free]));
-	    		row[meminfo_main][meminfo_free]<<=10;
-	    		while(*p++ != '\n');
-	    	}
-	    	else if(!strcmp(fieldbuf,"MemShared:")) {
-	    		p+=k;
-	    		sscanf(p," %lu",&(row[meminfo_main][meminfo_shared]));
-	    		row[meminfo_main][meminfo_shared]<<=10;
-	    		while(*p++ != '\n');
-	    	}
-	    	else if(!strcmp(fieldbuf,"Buffers:")) {
-	    		p+=k;
-	    		sscanf(p," %lu",&(row[meminfo_main][meminfo_buffers]));
-	    		row[meminfo_main][meminfo_buffers]<<=10;
-	    		while(*p++ != '\n');
-	    	}
-	    	else if(!strcmp(fieldbuf,"Cached:")) {
-	    		p+=k;
-    			sscanf(p," %lu",&(row[meminfo_main][meminfo_cached]));
-    			row[meminfo_main][meminfo_cached]<<=10;
-    			while(*p++ != '\n');
-    		}
-    		else if(!strcmp(fieldbuf,"SwapTotal:")) {
-    			p+=k;
-    			sscanf(p," %lu",&(row[meminfo_swap][meminfo_total]));
-    			row[meminfo_swap][meminfo_total]<<=10;
-    			while(*p++ != '\n');
-    		}
-    		else if(!strcmp(fieldbuf,"SwapFree:")) {
-    			p+=k;
-    			sscanf(p," %lu",&(row[meminfo_swap][meminfo_free]));
-    			row[meminfo_swap][meminfo_free]<<=10;
-    			while(*p++ != '\n');
-    		}
-    		else
-    			while(*p++ != '\n'); /* ignore lines we don't understand */
-    	}		
-    	row[meminfo_swap][meminfo_used]=row[meminfo_swap][meminfo_total]-row[meminfo_swap][meminfo_free];
-    	row[meminfo_main][meminfo_used]=row[meminfo_main][meminfo_total]-row[meminfo_main][meminfo_free];
-    }
-    return row;					/* NULL return ==> error */
-}
-
 /*------------------------------------------------------------*/
-/*         CPU record specyfication                           */
+/*         CPU record specification                           */
 /*------------------------------------------------------------*/
 
-static long init_record_aiCPU();
-static long read_CPU_load();
+static long cpu_info_init(int after);
+static long cpu_info_init_record(aiRecord *prec);
+static long cpu_info_process(int iter);
 struct {
         long            number;
         DEVSUPFUN       report;
@@ -456,121 +299,157 @@ struct {
         DEVSUPFUN       get_ioint_info;
         DEVSUPFUN       read_ai;
         DEVSUPFUN       special_linconv;
-}devCPULoad={
+} devCPULoad = {
         6,
         NULL,
+        cpu_info_init,
+        cpu_info_init_record,
         NULL,
-        init_record_aiCPU,
-        NULL,
-        read_CPU_load,
-	NULL
+        read_ai,
+        NULL
 };
 
 epicsExportAddress(dset,devCPULoad);
 
-static long init_record_aiCPU(pAiIn)
-    struct aiRecord    *pAiIn;
+struct cpu_info {
+  char buf[LINE_SIZE];
+  FILE* fp;
+  int count; /* number of CPUs */
+  double tick; /* USER_HZ, units for cpu counters */
+  COUNTER user;
+  COUNTER nice;
+  COUNTER system;
+  COUNTER idle;
+  COUNTER iowait;
+  COUNTER irq;
+  COUNTER softirq;
+  COUNTER steal;
+  COUNTER guest;
+  COUNTER guest_nice;
+};
+struct cpu_info *cpu_info = NULL;
+
+static long cpu_info_init(int after)
 {
-    if(recGblInitConstantLink(&pAiIn->inp,DBF_DOUBLE,&pAiIn->val))
-         pAiIn->udf = FALSE;
-    /* pthread_mutex_init(&readCPUmutex,NULL); */
-    return(0);
+  if (cpu_info!=NULL)
+    return 0;
+
+  const char* filename = "/proc/stat";
+  FILE *fp = fopen(filename,"r");
+  if (fp==NULL) {
+    fprintf(stderr, "cpu_info_init: can't open file '%s': %s\n", filename, strerror(errno));
+    return S_dev_noDeviceFound;
+  }
+  cpu_info = (struct cpu_info*)malloc(sizeof(struct cpu_info));
+  memset(cpu_info,0,sizeof(struct cpu_info));
+  cpu_info->fp = fp;
+  cpu_info_process(0);
+  return 0;
+}
+static long cpu_info_init_record(aiRecord *prec)
+{
+  switch (prec->inp.type) {
+  case CONSTANT:
+    if(recGblInitConstantLink(&prec->inp,DBF_DOUBLE,&prec->val))
+      prec->udf = FALSE;
+    break;
+  case VME_IO: {
+    const char *opt = prec->inp.value.vmeio.parm;
+    if      (strcmp(opt,"PROC")==0)   prec->dpvt = cpu_info_process;
+    else if (strcmp(opt,"USER")==0)   prec->dpvt = &cpu_info->user.val;
+    else if (strcmp(opt,"NICE")==0)   prec->dpvt = &cpu_info->nice.val;
+    else if (strcmp(opt,"SYSTEM")==0) prec->dpvt = &cpu_info->system.val;
+    else if (strcmp(opt,"IDLE")==0)   prec->dpvt = &cpu_info->idle.val;
+    else prec->dpvt = NULL;
+    if (prec->dpvt!=NULL)
+      prec->udf = FALSE;
+  } break;
+  default:
+    recGblRecordError(S_db_badField, (void*)prec, "init_record: illegial INP field");
+    return S_db_badField;
+  }
+  return 0;
+}
+static long cpu_info_process(int iter)
+{
+  int i; int ncpu = 0, ncnt = 0;
+  unsigned long cnt[10];
+  if (cpu_info==NULL)
+    return -1;
+  rewind(cpu_info->fp);
+  for(i=0; fgets(cpu_info->buf,sizeof(cpu_info->buf),cpu_info->fp)!=NULL; i++) {
+    /* only 'intr' can be up to 1000 bytes, all the rest is < 100. */
+    if (strncmp(cpu_info->buf,"cpu ",4)==0) {
+      ncnt = sscanf(cpu_info->buf+4,"%lu %lu %lu %lu %lu %lu %lu %lu %lu %lu",
+                    &cnt[0],&cnt[1],&cnt[2],&cnt[3],&cnt[4],&cnt[5],&cnt[6],&cnt[7],&cnt[8],&cnt[9]);
+    } else if (strncmp(cpu_info->buf,"cpu ",3)==0) { /* cpu\d+ */
+      ncpu++;
+    }
+  }
+  if (iter==0) {
+    cpu_info->tick = 1./sysconf(_SC_CLK_TCK);
+    cpu_info->count = ncpu;
+    cpu_info->user.cnt = cnt[0];
+    cpu_info->nice.cnt = cnt[1];
+    cpu_info->system.cnt = cnt[2];
+    cpu_info->idle.cnt = cnt[3];
+  } else {
+    double f;
+    counter_t d, s = 0;
+#define CPU_DIV(FIELD,VAL,SUM) \
+    d = (VAL-cpu_info->FIELD.cnt); cpu_info->FIELD.cnt = VAL; SUM += d; cpu_info->FIELD.val = d;
+    switch (ncnt) {
+      /* we asked scanf only for 10 numbers, so it can't be more */
+    case 10: CPU_DIV(guest_nice,cnt[9],s);
+    case  9: CPU_DIV(guest,cnt[8],s);
+    case  8: CPU_DIV(steal,cnt[7],s);
+    case  7: CPU_DIV(softirq,cnt[6],s);
+    case  6: CPU_DIV(irq,cnt[5],s);
+    case  5: CPU_DIV(iowait,cnt[4],s);
+    case  4:
+      CPU_DIV(user,cnt[0],s);
+      CPU_DIV(nice,cnt[1],s);
+      CPU_DIV(system,cnt[2],s);
+      CPU_DIV(idle,cnt[3],s);
+      break;
+    default:
+      /* something's going wrong */
+      ;
+    }
+    if (s>0) {
+      f = 100./s;
+      switch (ncnt) {
+        /* we asked scanf only for 10 numbers, so it can't be more */
+      case 10: cpu_info->guest_nice.val *= f;
+      case  9: cpu_info->guest.val *= f;
+      case  8: cpu_info->steal.val *= f;
+      case  7: cpu_info->softirq.val *= f;
+      case  6: cpu_info->irq.val *= f;
+      case  5: cpu_info->iowait.val *= f;
+      case  4:
+        cpu_info->user.val *= f;
+        cpu_info->nice.val *= f;
+        cpu_info->system.val *= f;
+        cpu_info->idle.val *= f;
+        break;
+      default:
+        /* something's going wrong */
+        ;
+      }
+    }
+    /* printf("cpu = %lu %f %f %f %f\n", s, cpu_info->user.val, cpu_info->nice.val, cpu_info->system.val, cpu_info->idle.val); */
+  }
+  return 0;
 }
 
-static float  _system_ticks = 0, _user_ticks = 0, _nice_ticks = 0, _idle_ticks = 0;
-
-static long read_CPU_load(pAiIn)
-    struct aiRecord    *pAiIn;
-{
-
-    long status=0;
-    unsigned long system_ticks = 0, user_ticks = 0, nice_ticks = 0, idle_ticks = 0;
-
-    int iStatus=0;
-    unsigned long sum=0;
-    /* double       dSum=0;
-    float        fIdle=0;
-    double       dV1;
-    double       dV2;
-    double       dV3;
-    double       dV4; */
-
-    struct vmeio *pvmeio = &pAiIn->inp.value.vmeio;
-    /* status = dbGetLink(&(pAiIn->inp),DBF_DOUBLE, &(pAiIn->val),0,0); */
-    /*If return was succesful then set undefined false*/  
-    
-    /* pthread_mutex_lock(&readCPUmutex); */
-    if(!strcmp(pvmeio->parm,"PROC")){
-    iStatus=four_cpu_numbers(&user_ticks,&nice_ticks,&system_ticks,&idle_ticks);
-    if ( iStatus == -1)
-      return (2);
- 
-    /*if(iStatus==1){
-       printf("prev: idle %.2f nice %.2f system %.2f use %.2f \n",_idle_ticks,_nice_ticks,_system_ticks,_user_ticks);
-       } */
-      
-	    sum = user_ticks+nice_ticks+system_ticks+idle_ticks;
-	    if (sum !=0  ){
-	    _user_ticks   = (float)((double)((double)(user_ticks   * 100.0) / (double)sum));
-	    _system_ticks = (float)((double)((double)(system_ticks * 100.0) / (double)sum));
-	    _nice_ticks   = (float)((double)((double)(nice_ticks   * 100.0) / (double)sum));
-	    _idle_ticks   = (float)((double)((double)(idle_ticks   * 100.0) / (double)sum)); 
-
-	    /*if(iStatus==1){
-       printf("new: idle %.2f nice %.2f system %.2f use %.2f \n",_idle_ticks,_nice_ticks,_system_ticks,_user_ticks);
-       }*/
-     
-	    if(_idle_ticks>201) {
-	      fprintf(stderr,"CPU load: Wrong Calculation\n");
-	      /*  dSum=(double)user_ticks+(double)nice_ticks+(double)system_ticks+(double)idle_ticks;
-	      printf("dSum %f\n",dSum);
-	      dV1=user_ticks;
-	      dV2=nice_ticks;
-	      dV3=system_ticks;
-	      dV4=idle_ticks;
-	      dSum=dV1+dV2+dV3+dV4;
-	      printf("dSum2 %f idleTicks %f %f %f %f %f\n",dSum,(dV4/dSum)*100.0, (dV4*100.0)/dSum,_user_ticks,_system_ticks,_nice_ticks);
-	      printf("idle %lu nice %lu system %lu use %lu \n",idle_ticks,nice_ticks,system_ticks,user_ticks);
-	      fIdle=(float)((double)((((double)idle_ticks)   * 100.0) /(double) sum));
-	      printf("sum %lu sumd %f idle1 %lu idle2 %lu ilded %lu idlef %f\n", sum,dSum,(unsigned long)((idle_ticks  / dSum)*100.0),(unsigned long)(idle_ticks ),(unsigned long)((idle_ticks   * 100)/dSum),fIdle); */
-	    }
-	      
-	    }/* if sum !=0 */
-    }
- 
-	    /* printf("CPU states:"
-		 " %2ld.%ld%% user, %2ld.%ld%% system,"
-		 " %2ld.%ld%% nice, %2ld.%ld%% idle",
-		 user_ticks / 10UL, user_ticks % 10UL,
-		 system_ticks / 10UL, system_ticks % 10UL,
-		 nice_ticks / 10UL, nice_ticks % 10UL,
-		 idle_ticks / 10UL, idle_ticks % 10UL); */
-
-
-	  if(!strcmp(pvmeio->parm,"IDLE"))
-	     pAiIn->val=_idle_ticks;
-	  else if (!strcmp(pvmeio->parm,"NICE"))
-	    pAiIn->val=_nice_ticks;
-	  else if (!strcmp(pvmeio->parm,"SYSTEM"))
-	    pAiIn->val=_system_ticks;
-	   else if (!strcmp(pvmeio->parm,"USER"))
-	    pAiIn->val=_user_ticks;
-	    else
-	      pAiIn->val=_idle_ticks;
-   
-    if(!status) pAiIn->udf = FALSE;
-    /* pthread_mutex_unlock(&readCPUmutex); */
-    return(2); /* no convertion fron rval to val */
-    }
-
-
 
 /*------------------------------------------------------------*/
-/*         MEM record specyfication                           */
+/*         MEM record specification                           */
 /*------------------------------------------------------------*/
 
-static long init_record_aiMEM();
-static long read_MEM_load();
+static long mem_info_init(int after);
+static long mem_info_init_record(aiRecord *prec);
+static long mem_info_process(int iter);
 struct {
         long            number;
         DEVSUPFUN       report;
@@ -579,69 +458,111 @@ struct {
         DEVSUPFUN       get_ioint_info;
         DEVSUPFUN       read_ai;
         DEVSUPFUN       special_linconv;
-}devMEMLoad={
+} devMEMLoad = {
         6,
         NULL,
+        mem_info_init,
+        mem_info_init_record,
         NULL,
-        init_record_aiMEM,
-        NULL,
-        read_MEM_load,
-	NULL
+        read_ai,
+        NULL
 };
 
 epicsExportAddress(dset,devMEMLoad);
 
-static long init_record_aiMEM(pAiIn)
-    struct aiRecord    *pAiIn;
+struct mem_info {
+  char buf[LINE_SIZE];
+  FILE* fp;
+  int page_size; /*  */
+  GAUGE mem_total;
+  GAUGE mem_free;
+  GAUGE mem_used;
+  GAUGE mem_shared;
+  GAUGE mem_buffers;
+  GAUGE mem_cached;
+  GAUGE swap_total;
+  GAUGE swap_free;
+  GAUGE swap_used;
+  GAUGE swap_cached;
+};
+struct mem_info *mem_info = NULL;
+
+static long mem_info_init(int after)
 {
-    if(recGblInitConstantLink(&pAiIn->inp,DBF_DOUBLE,&pAiIn->val))
-         pAiIn->udf = FALSE;
-    return(0);
+  if (mem_info!=NULL)
+    return 0;
+
+  const char* filename = "/proc/meminfo";
+  FILE *fp = fopen(filename,"r");
+  if (fp==NULL) {
+    fprintf(stderr, "mem_info_init: can't open file '%s': %s\n", filename, strerror(errno));
+    return S_dev_noDeviceFound;
+  }
+  mem_info = (struct mem_info*)malloc(sizeof(struct mem_info));
+  memset(mem_info, 0, sizeof(struct mem_info));
+  mem_info->fp = fp;
+  mem_info->page_size = sysconf(_SC_PAGESIZE);
+  return 0;
+}
+static long mem_info_init_record(aiRecord *prec)
+{
+  switch (prec->inp.type) {
+  case CONSTANT:
+    if(recGblInitConstantLink(&prec->inp,DBF_DOUBLE,&prec->val))
+      prec->udf = FALSE;
+    break;
+  case VME_IO: {
+    const char *opt = prec->inp.value.vmeio.parm;
+    if      (strcmp(opt,"PROC")==0)     prec->dpvt = mem_info_process;
+    else if (strcmp(opt,"MEMAV")==0)    prec->dpvt = &mem_info->mem_total.val;
+    else if (strcmp(opt,"MEMFREE")==0)  prec->dpvt = &mem_info->mem_free.val;
+    else if (strcmp(opt,"MEMUSED")==0)  prec->dpvt = &mem_info->mem_used.val;
+    else if (strcmp(opt,"MEMSHRD")==0)  prec->dpvt = &mem_info->mem_shared.val;
+    else if (strcmp(opt,"MEMBUFF")==0)  prec->dpvt = &mem_info->mem_buffers.val;
+    else if (strcmp(opt,"MEMCACH")==0)  prec->dpvt = &mem_info->mem_cached.val;
+    else if (strcmp(opt,"SWAPAV")==0)   prec->dpvt = &mem_info->swap_total.val;
+    else if (strcmp(opt,"SWAPUSED")==0) prec->dpvt = &mem_info->swap_used.val;
+    else if (strcmp(opt,"SWAPFREE")==0) prec->dpvt = &mem_info->swap_free.val;
+    else if (strcmp(opt,"SWAPCACH")==0) prec->dpvt = &mem_info->swap_cached.val;
+    else prec->dpvt = NULL;
+    if (prec->dpvt!=NULL)
+      prec->udf = FALSE;
+  } break;
+  default:
+    recGblRecordError(S_db_badField, (void*)prec, "init_record: illegial INP field");
+    return S_db_badField;
+  }
+  return 0;
+}
+static long mem_info_process(int iter)
+{
+  int i; char field[16]; unsigned long val; counter_t cnt;
+  if (mem_info==NULL)
+    return -1;
+  rewind(mem_info->fp);
+  field[15] = '\0';
+  for(i=0; fgets(mem_info->buf,sizeof(mem_info->buf),mem_info->fp)!=NULL; i++) {
+    int j = sscanf(mem_info->buf, "%15s %lu", field, &val);
+    cnt = val; /* cnt <<= 10; read values are in kB */
+    if      (strcmp(field,"MemTotal:")==0)   mem_info->mem_total.val   = cnt;
+    else if (strcmp(field,"MemFree:")==0)    mem_info->mem_free.val    = cnt;
+    else if (strcmp(field,"MemShared:")==0)  mem_info->mem_shared.val  = cnt; /* */
+    else if (strcmp(field,"Shmem:")==0)      mem_info->mem_shared.val  = cnt; /* since 2.6.32 */
+    else if (strcmp(field,"Buffers:")==0)    mem_info->mem_buffers.val = cnt;
+    else if (strcmp(field,"Cached:")==0)     mem_info->mem_cached.val  = cnt;
+    else if (strcmp(field,"SwapTotal:")==0)  mem_info->swap_total.val  = cnt;
+    else if (strcmp(field,"SwapFree:")==0)   mem_info->swap_free.val   = cnt;
+    else if (strcmp(field,"SwapCached:")==0) mem_info->swap_cached.val = cnt;
+  }
+  mem_info->mem_used.val = mem_info->mem_total.val - mem_info->mem_free.val;
+  mem_info->swap_used.val = mem_info->swap_total.val - mem_info->swap_free.val;
+  return 0;
 }
 
 
-static long read_MEM_load(pAiIn)
-    struct aiRecord    *pAiIn;
-{
-
-    long status=0;
-    static unsigned long **mem;
-
-    struct vmeio *pvmeio = &pAiIn->inp.value.vmeio;
-    /* status = dbGetLink(&(pAiIn->inp),DBF_DOUBLE, &(pAiIn->val),0,0); */
-    /*If return was succesful then set undefined false*/  
-   
-    if(!strcmp(pvmeio->parm,"PROC")){
-    if (!(mem = meminfo()) ||  mem[meminfo_main][meminfo_total] == 0) {	/* cannot normalize mem usage */
-	fprintf(stderr, "Cannot get size of memory from /proc/meminfo\n");
-	return(2); /* bofore exit(1); */
-    }
-    }
-	  if(!strcmp(pvmeio->parm,"MEMAV"))
-	    pAiIn->val=mem[meminfo_main][meminfo_total] >> 10;
-	  else if (!strcmp(pvmeio->parm,"MEMUSED"))
-	    pAiIn->val=mem[meminfo_main][meminfo_used] >> 10;
-	  else if (!strcmp(pvmeio->parm,"MEMFREE"))
-	    pAiIn->val=mem[meminfo_main][meminfo_free] >> 10;
-	  else if (!strcmp(pvmeio->parm,"MEMSHRD"))
-	    pAiIn->val=mem[meminfo_main][meminfo_shared] >> 10;
-	  else if (!strcmp(pvmeio->parm,"MEMBUFF"))
-	    pAiIn->val=mem[meminfo_main][meminfo_buffers] >> 10;
-	  else if (!strcmp(pvmeio->parm,"SWAPAV"))
-     pAiIn->val=mem[meminfo_swap][meminfo_total] >> 10;
-	  else if (!strcmp(pvmeio->parm,"SWAPUSED"))
-     pAiIn->val=mem[meminfo_swap][meminfo_used] >> 10;
-	  else if (!strcmp(pvmeio->parm,"SWAPFREE"))
-	    pAiIn->val=mem[meminfo_swap][meminfo_free] >> 10;
-	  else if (!strcmp(pvmeio->parm,"SWAPCACH"))
-	    pAiIn->val=mem[meminfo_total][meminfo_cached] >> 10;
-	  else 
-     pAiIn->val=mem[meminfo_main][meminfo_free] >> 10;
-   
-    if(!status) pAiIn->udf = FALSE;
-    return(2); /* no convertion fron rval to val */
-}
-
+/*------------------------------------------------------------*/
+/*         System information                                 */
+/*------------------------------------------------------------*/
 static long init_record_IP();
 static long read_uptime_IP();
 struct {
