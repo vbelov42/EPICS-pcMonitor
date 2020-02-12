@@ -17,6 +17,7 @@
 #include <string.h>
 #include <ctype.h>
 
+#include "epicsVersion.h"
 #include "alarm.h"
 #include "cvtTable.h"
 #include "dbDefs.h"
@@ -27,24 +28,17 @@
 #include "link.h"
 #include "stringinRecord.h"
 #include "aiRecord.h"
+#if EPICS_VERSION >= 3 && EPICS_REVISION >= 14
+#include "epicsTime.h"
+#endif
+#if EPICS_VERSION >= 3 && EPICS_REVISION >= 14 && EPICS_MODIFICATION > 4
+#include "epicsExport.h"
+#endif
 
 #include <sys/types.h>
 #include <unistd.h>
-#include <fcntl.h>
-//#include "/usr/include/linux/version.h"
 #include <errno.h>
-
-#include <sys/time.h>
 #include <time.h>
-
-#include <sys/socket.h>
-#include <sys/ioctl.h>
-#include <net/if.h>
-#include <netdb.h>
-
-#include <sys/utsname.h>
-/* in vesrion 3.14.7 #include "epicsExport.h" */
-#include "epicsExport.h"
 
 /*------------------------- Common definitions and functions ------------------*/
 
@@ -71,20 +65,22 @@ static long read_si(stringinRecord *prec)
 {
   if (!prec->dpvt)
     return S_dev_NoInit;
-  if (strcmp(prec->inp.value.vmeio.parm,"PROC")==0)
+  const char *opt = prec->inp.value.vmeio.parm;
+  if (opt[0]=='P' && opt[1]=='R' && opt[2]=='O' && opt[3]=='C')
     ((PROCESSFUN)prec->dpvt)(1);
   else
-    strncpy(prec->val,(char*)prec->dpvt,sizeof(prec->val));
+    sprintf(prec->val,"%.*s",(int)sizeof(prec->val)-1,(char*)prec->dpvt);
   return 0;
 }
 
-static int get_uptime(void);           /* get formated time from /proc/uptime */
-static void format_uptime(char *str1); /* set formated up time in str1 */
-static double getAvgLoad(char * parm); /* get the avg load for parm= 1min ora 5min ora 15min */
+/*------------------------------------------------------------*/
+/*         System information                                 */
+/*------------------------------------------------------------*/
 
-/*------------------------- Create the dset for devUptime ------------------*/
-static long init_record_s();
-static long read_uptime();
+static long sys_info_init(int after);
+static long sys_info_init_record_si(stringinRecord *prec);
+static long sys_info_init_record_ai(aiRecord *prec);
+static long sys_info_process(int iter);
 struct {
         long            number;
         DEVSUPFUN       report;
@@ -92,108 +88,15 @@ struct {
         DEVSUPFUN       init_record;
         DEVSUPFUN       get_ioint_info;
         DEVSUPFUN       read;
-}devUpTime={
+} devSysInfoSi = {
         5,
         NULL,
+        sys_info_init,
+        sys_info_init_record_si,
         NULL,
-        init_record_s,
-        NULL,
-        read_uptime,
+        read_si,
 };
-epicsExportAddress(dset,devUpTime); 
-
-
-static long init_record_s(pStringIn)
-    struct stringinRecord    *pStringIn;
-{
-    if(recGblInitConstantLink(&pStringIn->inp,DBF_STRING,&pStringIn->val))
-         pStringIn->udf = FALSE;
-    return(0);
-}
-
-
-static long read_uptime(pStringIn)
-    struct stringinRecord    *pStringIn;
-{
-  /*     long status; */
-    struct timeval        iheure;
-    int    iCurTime=0;
-    int    iUpTime=0;
-
-    struct vmeio *pvmeio = &pStringIn->inp.value.vmeio;
-
-    /* status = dbGetLink(&(pStringIn->inp),DBF_STRING, &(pStringIn->val),0,0); */
-    /*If return was succesful then set undefined false*/
-    /* sprintf(pStringIn->val,"ala %d",get_uptime()); */
-    if(!strcmp(pvmeio->parm,"CURTIME")){
-      
-      gettimeofday(&iheure,NULL);
-      sprintf(pStringIn->val,"%.16s",&(ctime((time_t *)&iheure.tv_sec))[0]);
-
-    }
-    else if(!strcmp(pvmeio->parm,"BOOTIME")){
-	 gettimeofday(&iheure,NULL);
-	 iCurTime=iheure.tv_sec;
-	 iUpTime=get_uptime();
-	 iCurTime=iCurTime-iUpTime;
-	 sprintf(pStringIn->val,"%.16s",&(ctime((time_t *)&iCurTime))[0]);
-       }
-    else if(!strcmp(pvmeio->parm,"UPTIME")){
-      format_uptime(pStringIn->val);
-    }
-    /* if(!status) */  pStringIn->udf = FALSE;
-    return(0);
-}
-
-/*-----------------  get uptime in seconds -----------------------*/
-
-int get_uptime(void){
-
-  char str_seconds[80];  
-  FILE *proc_file;
-  int int_seconds;
-
-
-
-  if((proc_file=fopen("/proc/uptime","r"))==NULL)
-    { fprintf(stderr,"Cannot open /proc/uptime for reading!\n");
-    return 0; /*before  exit(127); */
-    } 
-  
-  fscanf(proc_file,"%s",str_seconds);   
-  int_seconds=strtol(str_seconds,NULL,10);
-
-  fclose(proc_file);
-
-
-return int_seconds;
-
-}/* get_uptime */
-
-void format_uptime(char *str1){
-  int curr,sec,min,hour,day;
-
-  curr=get_uptime();
-
-  day=curr/86400;
-  curr=curr%86400;
-  hour=curr/3600;
-  curr=curr%3600;
-  min=curr/60;
-  sec=curr%60;
-  if(day==0)
-  	sprintf(str1,"%02d:%02d",hour,min);
-  else if (day==1)
-	  sprintf(str1,"%02d day %02d:%02d",day,hour,min);
-  else
-	  sprintf(str1,"%02d days %02d:%02d",day,hour,min);
-
-}
-
-/*---------------------------  get the AVG load ------------------------------------*/
-
-static long init_record_ai();
-static long read_avg_load();
+epicsExportAddress(dset,devSysInfoSi); 
 struct {
         long            number;
         DEVSUPFUN       report;
@@ -202,87 +105,208 @@ struct {
         DEVSUPFUN       get_ioint_info;
         DEVSUPFUN       read_ai;
         DEVSUPFUN       special_linconv;
-}devAvgLoad={
+} devSysInfoAi = {
         6,
         NULL,
+        sys_info_init,
+        sys_info_init_record_ai,
         NULL,
-        init_record_ai,
-        NULL,
-        read_avg_load,
-	NULL
+        read_ai,
+        NULL
 };
+epicsExportAddress(dset,devSysInfoAi); 
 
-epicsExportAddress(dset,devAvgLoad);
+struct system_info {
+  char buf[LINE_SIZE];
+  //
+  char system[48];
+  char arch[48];
+  char release[48];
+  char version[48];
+  char hostname[48]; /* actually can be as long as 256 */
+  char ipaddr[48];
+  char osname[48];
+  time_t time_current;
+  time_t time_boot;
+  time_t time_up;
+  char time_boot_f[16];
+  char time_boot_s[32];
+  GAUGE time_up_i;
+  char time_up_s[16];
+  FILE *fp;
+  GAUGE load_short; /*  1 min */
+  GAUGE load_mid;   /*  5 min */
+  GAUGE load_long;  /* 15 min */
+  GAUGE proc_sched;
+  GAUGE proc_running;
+  GAUGE proc_blocked;
+  COUNTER proc_new;
+  // epicsStrting val[40];
+};
+struct system_info *sys_info = NULL;
 
-static long init_record_ai(pAiIn)
-    struct aiRecord    *pAiIn;
+static long sys_info_init(int after)
 {
-    if(recGblInitConstantLink(&pAiIn->inp,DBF_DOUBLE,&pAiIn->val))
-         pAiIn->udf = FALSE;
-    return(0);
+  if (sys_info!=NULL)
+    return 0;
+
+  sys_info = (struct system_info*)malloc(sizeof(struct system_info));
+  memset(sys_info,0,sizeof(struct system_info));
+  const char* filename = "/proc/loadavg";
+  FILE *fp = fopen(filename,"r");
+  if (fp==NULL) {
+    fprintf(stderr, "sys_info_init: can't open file '%s': %s\n", filename, strerror(errno));
+  } else
+    sys_info->fp = fp;
+  sys_info_process(0);
+  return 0;
 }
-
-
-static long read_avg_load(pAiIn)
-    struct aiRecord    *pAiIn;
+static long sys_info_init_record_si(stringinRecord *prec)
 {
-
-    long status=0;
-
-    struct vmeio *pvmeio = &pAiIn->inp.value.vmeio;
-    /* status = dbGetLink(&(pAiIn->inp),DBF_DOUBLE, &(pAiIn->val),0,0); */
-    /*If return was succesful then set undefined false*/  
-    
-    pAiIn->val=getAvgLoad(pvmeio->parm);
-   
-    if(!status) pAiIn->udf = FALSE;
-    return(2); /* no convertion fron rval to val */
-}
-
-
-double getAvgLoad(char * parm){
- 
-  /* FILE *proc_file;
-  double avg1min=0;
-  double avg5min=0;
-  double avg15min=0;
-  char str1[30]="";
-  char str2[30]=""; */
-  double val=0;
-
-  double avg[3];
-
-  if(getloadavg(avg,sizeof(avg))<0)
-    { fprintf(stderr,"load avearage was unobtainable.\n");
-      return val; /* before exit(127); */
-    } 
-
-  /* if((proc_file=fopen("/proc/loadavg","r"))==NULL)
-    { fprintf(stderr,"Cannot open /proc/loadavg for reading!\n");
-    return val; 
-    } 
-  
-    fscanf(proc_file,"%lf %lf %lf %s %s",&avg1min,&avg5min,&avg15min,str1,str2); */
-  
-
-  if(!strcmp(parm,"1min")){
-    val=avg[0];
-    /* val=avg1min; */
+  switch (prec->inp.type) {
+  case CONSTANT:
+    if(recGblInitConstantLink(&prec->inp,DBF_DOUBLE,&prec->val))
+      prec->udf = FALSE;
+    break;
+  case VME_IO: {
+    const char *opt = prec->inp.value.vmeio.parm;
+    if      (strcmp(opt,"PROC")==0)     prec->dpvt = sys_info_process;
+    else if (strcmp(opt,"SYSNAME")==0)  prec->dpvt = &sys_info->system;
+    else if (strcmp(opt,"MACHINE")==0)  prec->dpvt = &sys_info->arch;
+    else if (strcmp(opt,"RELEASE")==0)  prec->dpvt = &sys_info->release;
+    else if (strcmp(opt,"VERSION")==0)  prec->dpvt = &sys_info->version;
+    else if (strcmp(opt,"HOSTNAME")==0) prec->dpvt = &sys_info->hostname;
+    else if (strcmp(opt,"IPADDR")==0)   prec->dpvt = &sys_info->ipaddr;
+    else if (strcmp(opt,"OSNAME")==0)   prec->dpvt = &sys_info->osname;
+    else if (strcmp(opt,"BOOTIME")==0)  prec->dpvt = &sys_info->time_boot_s;
+    else if (strcmp(opt,"UPTIME")==0)   prec->dpvt = &sys_info->time_up_s;
+    else prec->dpvt = NULL;
+    if (prec->dpvt!=NULL)
+      prec->udf = FALSE;
+  } break;
+  default:
+    recGblRecordError(S_db_badField, (void*)prec, "init_record: illegial INP field");
+    return S_db_badField;
   }
-  else if(!strcmp(parm,"5min")){
-     val=avg[1];
-     /* val=avg5min;*/
-  }	
-  else{
-     val=avg[2];
-     /* val=avg15min;*/
-    } 
-
-  
-
-  /* fclose(proc_file);*/
-	  return val;
+  return 0;
 }
+static long sys_info_init_record_ai(aiRecord *prec)
+{
+  switch (prec->inp.type) {
+  case CONSTANT:
+    if(recGblInitConstantLink(&prec->inp,DBF_DOUBLE,&prec->val))
+      prec->udf = FALSE;
+    break;
+  case VME_IO: {
+    const char *opt = prec->inp.value.vmeio.parm;
+    if      (strcmp(opt,"PROC")==0)     prec->dpvt = sys_info_process;
+    else if (strcmp(opt,"LA1min")==0)   prec->dpvt = &sys_info->load_short.val;
+    else if (strcmp(opt,"LA5min")==0)   prec->dpvt = &sys_info->load_mid.val;
+    else if (strcmp(opt,"LA15min")==0)  prec->dpvt = &sys_info->load_long.val;
+    else if (strcmp(opt,"UPTIME")==0)   prec->dpvt = &sys_info->time_up_i.val;
+    else prec->dpvt = NULL;
+    if (prec->dpvt!=NULL)
+      prec->udf = FALSE;
+  } break;
+  default:
+    recGblRecordError(S_db_badField, (void*)prec, "init_record: illegial INP field");
+    return S_db_badField;
+  }
+  return 0;
+}
+#include <sys/utsname.h>
+#include <sys/socket.h>
+#include <net/if.h>
+#include <sys/ioctl.h>
+#include <arpa/inet.h>
+static long sys_info_process(int iter)
+{
+  if (sys_info==NULL)
+    return -1;
+  if (iter==0) {
+    struct utsname un;
+    if (uname(&un)==0) {
+      strncpy(sys_info->system, un.sysname, sizeof(sys_info->system)-1);
+      strncpy(sys_info->arch, un.machine, sizeof(sys_info->arch)-1);
+      strncpy(sys_info->release, un.release, sizeof(sys_info->release)-1);
+      strncpy(sys_info->version, un.version, sizeof(sys_info->version)-1);
+      strncpy(sys_info->hostname, un.nodename, sizeof(sys_info->hostname)-1);
+    } else {
+      fprintf(stderr, "sys_info_init: call 'uname' failed: %s\n", strerror(errno));
+    }
+  }
+  if (iter==0) {
+    /* the following code is very specific, so we don't care about errors */
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock != -1) {
+      struct ifreq ifr;
+      memset(&ifr, 0, sizeof(ifr));
+      strncpy(ifr.ifr_name, "eth0", sizeof(ifr.ifr_name)-1);
+      if (ioctl(sock, SIOCGIFADDR, &ifr) != -1) {
+        /* For compatibility only AF_INET addresses are returned by SIOCGIFADDR */
+        struct sockaddr_in *sa = (struct sockaddr_in *)&ifr.ifr_addr;
+        inet_ntop(sa->sin_family, &sa->sin_addr, sys_info->ipaddr, sizeof(sys_info->ipaddr));
+      }
+      close(sock);
+    }
+  }
+  if (iter==0) {
+    /* let's rely on LSB, but it isn't important */
+    FILE *fp = popen("lsb_release -s -d","r");
+    if (fp != NULL) {
+      if (fgets(sys_info->buf, sizeof(sys_info->buf), fp) != NULL) {
+        char *p = sys_info->buf; char *q = p+strlen(p)-1;
+        if (*q=='\n') q--; if (*q=='\r') q--; /* there will be new line */
+        if (*p=='"') { p++; if (*q=='"') q--; } /* and quotes, maybe */
+        *(++q) = '\0';
+        strncpy(sys_info->osname, p, sizeof(sys_info->osname)-1);
+      }
+      pclose(fp);
+    }
+  }
+  {
+    epicsTimeStamp ets;
+    epicsTimeGetCurrent(&ets);
+    epicsTimeToTime_t(&sys_info->time_current, &ets);
+    if (sys_info->time_boot != 0) {
+      if (sys_info->time_boot_s[0] == '\0') {
+        /* first apperance, need to make a string version */
+        epicsTimeFromTime_t(&ets, sys_info->time_boot);
+        epicsTimeToStrftime(sys_info->time_boot_s, sizeof(sys_info->time_boot_s), "%a %b %d %H:%M", &ets);
+      }
+      sys_info->time_up = sys_info->time_current-sys_info->time_boot;
+      sys_info->time_up_i.val = sys_info->time_up;
+      {
+        ldiv_t td = ldiv(sys_info->time_up, 86400);
+        div_t tH = div(td.rem, 3600);
+        div_t tM = div(tH.rem, 60);
+        if (td.quot==0)
+          snprintf(sys_info->time_up_s, sizeof(sys_info->time_up_s), "%2d:%02d", tH.quot, tM.quot);
+        else if (td.quot==1)
+          snprintf(sys_info->time_up_s, sizeof(sys_info->time_up_s), "1 day %2d:%02d", tH.quot, tM.quot);
+        else
+          snprintf(sys_info->time_up_s, sizeof(sys_info->time_up_s), "%d days %2d:%02d", (int)td.quot, tH.quot, tM.quot);
+      }
+    }
+  }
+  if (sys_info->fp != NULL) {
+    int i, n;
+    rewind(sys_info->fp);
+    for(i=0; fgets(sys_info->buf,sizeof(sys_info->buf),sys_info->fp)!=NULL; i++) {
+      double a[3]; int b[3];
+      int n = sscanf(sys_info->buf, "%lf %lf %lf %d/%d %d", &a[0], &a[1], &a[2], &b[0], &b[1], &b[2]);
+      sys_info->load_short.val = a[0];
+      sys_info->load_mid.val   = a[1];
+      sys_info->load_long.val  = a[2];
+      sys_info->proc_sched.val = b[0];
+      sys_info->proc_running.val = b[1];
+      /* proc_blocked and proc_new are filled by cpu_info_process() */
+    }
+  }
+
+  return 0;
+}
+
 
 /*------------------------------------------------------------*/
 /*         CPU record specification                           */
@@ -382,8 +406,23 @@ static long cpu_info_process(int iter)
     if (strncmp(cpu_info->buf,"cpu ",4)==0) {
       ncnt = sscanf(cpu_info->buf+4,"%lu %lu %lu %lu %lu %lu %lu %lu %lu %lu",
                     &cnt[0],&cnt[1],&cnt[2],&cnt[3],&cnt[4],&cnt[5],&cnt[6],&cnt[7],&cnt[8],&cnt[9]);
-    } else if (strncmp(cpu_info->buf,"cpu ",3)==0) { /* cpu\d+ */
+    } else if (strncmp(cpu_info->buf,"cpu",3)==0 && isdigit(cpu_info->buf[3])) { /* cpu\d+ */
       ncpu++;
+    } else if (strncmp(cpu_info->buf,"btime ",6)==0) {
+      if (sys_info!=NULL && sys_info->time_boot==0)
+        sys_info->time_boot = strtoul(cpu_info->buf+6, NULL, 10);
+    } else if (strncmp(cpu_info->buf,"processes ",10)==0) {
+      if (sys_info!=NULL) {
+        counter_t c = strtoul(cpu_info->buf+10,NULL,10);
+        sys_info->proc_new.val = c - sys_info->proc_new.cnt;
+        sys_info->proc_new.cnt = c;
+      }
+    } else if (strncmp(cpu_info->buf,"procs_running ",14)==0) {
+      if (sys_info!=NULL)
+        sys_info->proc_running.val = strtoul(cpu_info->buf+10,NULL,10);
+    } else if (strncmp(cpu_info->buf,"procs_blocked ",14)==0) {
+      if (sys_info!=NULL)
+        sys_info->proc_blocked.val = strtoul(cpu_info->buf+10,NULL,10);
     }
   }
   if (iter==0) {
@@ -437,7 +476,6 @@ static long cpu_info_process(int iter)
         ;
       }
     }
-    /* printf("cpu = %lu %f %f %f %f\n", s, cpu_info->user.val, cpu_info->nice.val, cpu_info->system.val, cpu_info->idle.val); */
   }
   return 0;
 }
@@ -557,119 +595,5 @@ static long mem_info_process(int iter)
   mem_info->mem_used.val = mem_info->mem_total.val - mem_info->mem_free.val;
   mem_info->swap_used.val = mem_info->swap_total.val - mem_info->swap_free.val;
   return 0;
-}
-
-
-/*------------------------------------------------------------*/
-/*         System information                                 */
-/*------------------------------------------------------------*/
-static long init_record_IP();
-static long read_uptime_IP();
-struct {
-        long            number;
-        DEVSUPFUN       report;
-        DEVSUPFUN       init;
-        DEVSUPFUN       init_record;
-        DEVSUPFUN       get_ioint_info;
-        DEVSUPFUN       read;
-}devIpAddr={
-        5,
-        NULL,
-        NULL,
-        init_record_IP,
-        NULL,
-        read_uptime_IP,
-};
-
-epicsExportAddress(dset,devIpAddr);
-
-static long init_record_IP(pStringIn)
-    struct stringinRecord    *pStringIn;
-{
-    if(recGblInitConstantLink(&pStringIn->inp,DBF_STRING,&pStringIn->val))
-         pStringIn->udf = FALSE;
-    return(0);
-}
-
-
-static long read_uptime_IP(pStringIn)
-    struct stringinRecord    *pStringIn;
-{
-  int s;
-  struct ifreq ifr;
-  unsigned long iPAddr;
-
-  if ((s=socket(AF_INET, SOCK_DGRAM, 0)) < 0)
-    return 0;
-
-   strcpy(ifr.ifr_name, "eth0");
-
-  if (! ioctl(s, SIOCGIFADDR, &ifr))
-    {
-     iPAddr=((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr;
-     sprintf(pStringIn->val,"%lu:%lu:%lu:%lu",iPAddr%256,(iPAddr/256)%256,(iPAddr/65536)%256,(iPAddr/16777216)%256);
-    }
-    close(s);
-    /* if(!status)*/  pStringIn->udf = FALSE;
-    return(0);
-}
-/*-------------- get host info ---------------------------*/
-
-static long init_record_Info();
-static long read_uptime_Info();
-struct {
-        long            number;
-        DEVSUPFUN       report;
-        DEVSUPFUN       init;
-        DEVSUPFUN       init_record;
-        DEVSUPFUN       get_ioint_info;
-        DEVSUPFUN       read;
-}devUname={
-        5,
-        NULL,
-        NULL,
-        init_record_Info,
-        NULL,
-        read_uptime_Info,
-};
-
-epicsExportAddress(dset,devUname);
-
-static long init_record_Info(pStringIn)
-    struct stringinRecord    *pStringIn;
-{
-    if(recGblInitConstantLink(&pStringIn->inp,DBF_STRING,&pStringIn->val))
-         pStringIn->udf = FALSE;
-    return(0);
-}
-
-
-static long read_uptime_Info(pStringIn)
-    struct stringinRecord    *pStringIn;
-{
-  /* long status; */
-    struct utsname name;
-
-    struct vmeio *pvmeio = &pStringIn->inp.value.vmeio;
-    /* status = dbGetLink(&(pStringIn->inp),DBF_STRING, &(pStringIn->val),0,0); */
-    /*If return was succesful then set undefined false*/
-    /* sprintf(pStringIn->val,"ala %d",get_uptime()); */
-
-      if (uname (&name) == -1){
-	fprintf(stderr,"UP time info: cannot get system name\n");
-      }
-      else{
-	if(!strcmp(pvmeio->parm,"SYSNAME"))
-	  sprintf(pStringIn->val,"%.*s",sizeof(pStringIn->val)-1,name.sysname);
-      else if(!strcmp(pvmeio->parm,"RELEASE"))
-	sprintf(pStringIn->val,"%.*s",sizeof(pStringIn->val)-1,name.release);
-      else if(!strcmp(pvmeio->parm,"VERSION"))
-	sprintf(pStringIn->val,"%.*s",sizeof(pStringIn->val)-1,name.version);
-      else if(!strcmp(pvmeio->parm,"MACHINE"))
-	sprintf(pStringIn->val,"%.*s",sizeof(pStringIn->val)-1,name.machine);
-      }
-       
-      /* if(!status) */ pStringIn->udf = FALSE;
-    return(0);
 }
 

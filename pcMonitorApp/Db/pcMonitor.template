@@ -41,6 +41,144 @@ record(calc,"$(BOOTPC):HBT") {
     field(PREC, "0")
 }
 
+#-------------------------------------------------
+#               SYSTEM INFO
+#------------------------------------------------
+
+# processing record
+record(stringin, "$(BOOTPC):SYS")
+{
+        field(DESC, "Up time")
+        field(DTYP, "SysInfo")
+	field(INP, "#C0 S0 @PROC")
+	field(SCAN,"10 second")
+	field(FLNK, "$(BOOTPC):UPTIME")
+	field(PINI, "YES")
+}
+
+# --- uname ---
+record(stringin, "$(BOOTPC):SYSNAME")
+{
+        field(DESC, "Up time")
+        field(DTYP, "SysInfo")
+        field(INP, "#C0 S0 @SYSNAME")
+        field(PINI, "YES")
+}
+
+record(stringin, "$(BOOTPC):RELEASE")
+{
+        field(DESC, "Up time")
+        field(DTYP, "SysInfo")
+        field(INP, "#C0 S0 @RELEASE")
+        field(PINI, "YES")
+}
+
+record(stringin, "$(BOOTPC):VERSION")
+{
+        field(DESC, "Up time")
+        field(DTYP, "SysInfo")
+        field(INP, "#C0 S0 @VERSION")
+        field(PINI, "YES")
+}
+
+record(stringin, "$(BOOTPC):MACHINE")
+{
+        field(DESC, "Up time")
+        field(DTYP, "SysInfo")
+        field(INP, "#C0 S0 @MACHINE")
+        field(PINI, "YES")
+}
+
+record(stringin, "$(BOOTPC):HOSTNAME")
+{
+        field(DESC, "Up time")
+        field(DTYP, "SysInfo")
+        field(INP, "#C0 S0 @HOSTNAME")
+        field(PINI, "YES")
+}
+
+record(stringin, "$(BOOTPC):IPADDR")
+{
+        field(DESC, "Up time")
+        field(DTYP, "SysInfo")
+        field(INP, "#C0 S0 @IPADDR")
+        #field(SCAN,"10 second")
+        field(PINI, "YES")
+}
+
+# --- LSB info ---
+record(stringin, "$(BOOTPC):OSNAME")
+{
+        field(DESC, "Up time")
+        field(DTYP, "SysInfo")
+        field(INP, "#C0 S0 @OSNAME")
+        field(PINI, "YES")
+}
+
+# --- TIME ---
+record(stringin, "$(BOOTPC):TIME")
+{
+        field(DTYP, "Soft Timestamp")
+        field(TSEL, "$(BOOTPC):HBT.TIME CP")
+        field(INP, "@%a %b %d %H:%M")
+}
+
+record(stringin, "$(BOOTPC):BOOTTIME")
+{
+        field(DESC, "Boot time")
+        field(DTYP, "SysInfo")
+        field(INP, "#C0 S0 @BOOTIME")
+	field(PINI, "YES")
+}
+
+record(stringin, "$(BOOTPC):UPTIME")
+{
+        field(DESC, "Up time")
+        field(DTYP, "SysInfo")
+	field(INP, "#C0 S0 @UPTIME")
+	field(SCAN,"10 second")
+	field(FLNK, "$(BOOTPC):UPTIME_T")
+	field(PINI, "YES")
+}
+
+record(ai, "$(BOOTPC):UPTIME_T")
+{
+        field(DESC, "Up time")
+        field(DTYP, "SysInfo")
+	field(INP, "#C0 S0 @UPTIME")
+	field(SCAN,"10 second")
+#	field(FLNK, "$(BOOTPC):LOAD1MIN")
+	field(PINI, "YES")
+}
+
+# --- LOAD Average ---
+record(ai, "$(BOOTPC):LOAD1MIN")
+{
+        field(DESC, "Avg Load")
+        field(DTYP, "SysInfo")
+	field(INP, "#C0 S0 @LA1min")
+        field(SCAN,"10 second")
+	field(PREC,"2")
+	field(PINI, "YES")
+	field(FLNK,"$(BOOTPC):LOAD5MIN")
+}
+
+record(ai, "$(BOOTPC):LOAD5MIN")
+{
+        field(DESC, "Avg Load")
+        field(DTYP, "SysInfo")
+        field(INP, "#C0 S0 @LA5min")
+	field(PREC,"2")
+        field(FLNK,"$(BOOTPC):LOAD15MIN")
+}
+record(ai, "$(BOOTPC):LOAD15MIN")
+{
+        field(DESC, "Avg Load")
+        field(DTYP, "SysInfo")
+        field(INP, "#C0 S0 @LA15min")
+	field(PREC,"2")
+}
+
 #----------------------------------------------------
 #                   MEMORY STATUS
 #----------------------------------------------------
@@ -155,72 +293,11 @@ record(ai, "$(BOOTPC):SWAPCACH")
         field(INP, "#C0 S0 @SWAPCACH")
 }
 
-#----------------------------------------------
-#          	   TIME STATUS
-#----------------------------------------------
-
-
-record(stringin, "$(BOOTPC):UPTIME")
-{
-        field(DESC, "Up time")
-        field(DTYP, "UpTime")
-	field(INP, "#C0 S0 @UPTIME")
-	field(SCAN,"10 second")
-	field(FLNK, "$(BOOTPC):TIME")
-	field(PINI, "YES")
-}
-record(stringin, "$(BOOTPC):TIME")
-{
-        field(DESC, "Current time")
-        field(DTYP, "UpTime")
-        field(INP, "#C0 S0 @CURTIME")
-        #field(FLNK, "$(BOOTPC):BOOTTIME")
-}
-
-record(stringin, "$(BOOTPC):BOOTTIME")
-{
-        field(DESC, "Boot  time")
-        field(DTYP, "UpTime")
-        field(INP, "#C0 S0 @BOOTIME")
-	field(PINI, "YES")
-}
-
-#---------------------------------------------------
-#               LOAD AVG
-#---------------------------------------------------
-
-record(ai, "$(BOOTPC):LOAD1MIN")
-{
-        field(DESC, "Avg Load")
-        field(DTYP, "AvgLoad")
-	field(INP, "#C0 S0 @1min")
-        field(SCAN,"10 second")
-	field(PREC,"2")
-	field(PINI, "YES")
-	field(FLNK,"$(BOOTPC):LOAD5MIN")
-}
-
-record(ai, "$(BOOTPC):LOAD5MIN")
-{
-        field(DESC, "Avg Load")
-        field(DTYP, "AvgLoad")
-        field(INP, "#C0 S0 @5min")
-	field(PREC,"2")
-        field(FLNK,"$(BOOTPC):LOAD15MIN")
-}
-record(ai, "$(BOOTPC):LOAD15MIN")
-{
-        field(DESC, "Avg Load")
-        field(DTYP, "AvgLoad")
-        field(INP, "#C0 S0 @15min")
-	field(PREC,"2")
-}
-
 #----------------------------------------------------
 #               CPU load STATUS
 #----------------------------------------------------
-# $(BOOTPC):CPU record is the process record that synchronises all other CPU records# on the device supprot level 
 
+# $(BOOTPC):CPU record is the process record that synchronises all other CPU records# on the device supprot level 
 
 record(ai, "$(BOOTPC):CPU")
 {
@@ -288,49 +365,5 @@ record(calc, "$(BOOTPC):LOAD")
 	field(HIGH, "70")
 	field(HHSV, "MAJOR")
 	field(HSV,  "MINOR")
-}
-
-#-------------------------------------------------
-#               SYSTEM INFO
-#------------------------------------------------
-
-record(stringin, "$(BOOTPC):IPADDR")
-{
-        field(DESC, "Up time")
-        field(DTYP, "IpAddr")
-        #field(INP, "#C0 S0 @UPTIME")
-        #field(SCAN,"10 second")
-        field(PINI, "YES")
-}
-
-record(stringin, "$(BOOTPC):SYSNAME")
-{
-        field(DESC, "Up time")
-        field(DTYP, "SysInfo")
-	field(INP, "#C0 S0 @SYSNAME")
-        field(PINI, "YES")
-}
-
-record(stringin, "$(BOOTPC):RELEASE")
-{
-        field(DESC, "Up time")
-        field(DTYP, "SysInfo")
-        field(INP, "#C0 S0 @RELEASE")
-        field(PINI, "YES")
-}
-
-record(stringin, "$(BOOTPC):VERSION")
-{
-        field(DESC, "Up time")
-        field(DTYP, "SysInfo")
-        field(INP, "#C0 S0 @VERSION")
-        field(PINI, "YES")
-}
-record(stringin, "$(BOOTPC):MACHINE")
-{
-        field(DESC, "Up time")
-        field(DTYP, "SysInfo")
-        field(INP, "#C0 S0 @MACHINE")
-        field(PINI, "YES")
 }
 
