@@ -73,6 +73,62 @@ static long read_si(stringinRecord *prec)
   return 0;
 }
 
+static const char* parse_options(const char* line, char *key, unsigned key_size, char *val, unsigned val_size)
+{
+  int m = 0;
+  if (line == NULL || key == NULL || val == NULL)
+    return NULL;
+  const char *p = line;
+  char *k = key, *v = val, *k2 = key+key_size-1, *v2 = val+val_size-1;
+  for ( ; *p != '\0'; p++) {
+    switch (m) {
+    case 0: /* before key */
+      if (isspace(*p)) {
+        ;
+      } else if (isalnum(*p)) {
+        m = 1;
+        *(k++) = *p;
+      } else if (*p == '=') {
+        m = 2;
+      } else
+        m = -1;
+      break;
+    case 1: /* key */
+      if (isalnum(*p)) {
+        if (k < k2)
+          *(k++) = *p;
+      } else if (*p == '=') {
+        m = 2;
+      } else
+        m = -1;
+      break;
+    case 2: /* value */
+      if (v==val && *p=='\'') {
+        m = 3;
+      } else if (isalnum(*p)) {
+        if (v < v2)
+          *(v++) = *p;
+      } else
+        m = -1;
+      break;
+    case 3: /* value in quotes */
+      if (*p=='\'') {
+        p++;
+        m = -1;
+      } else {
+        if (v < v2)
+          *(v++) = *p;
+      }
+    default:
+      ;
+    }
+    if (m == -1) break; /* skips p++ */
+  }
+  *(k++) = '\0'; *(v++) = '\0';
+  /* while (isspace(*p)) p++; */
+  return p;
+}
+
 /*------------------------------------------------------------*/
 /*         System information                                 */
 /*------------------------------------------------------------*/
@@ -80,6 +136,7 @@ static long read_si(stringinRecord *prec)
 static long sys_info_init(int after);
 static long sys_info_init_record_si(stringinRecord *prec);
 static long sys_info_init_record_ai(aiRecord *prec);
+static int  sys_info_parse_options(const char *name, const char *opt);
 static long sys_info_process(int iter);
 struct {
         long            number;
@@ -117,8 +174,13 @@ struct {
 epicsExportAddress(dset,devSysInfoAi); 
 
 struct system_info {
+  /* config */
+  char ifname[16]; /* interface to take address from, default is 'eth0' */
+  char timefmt[16]; /* format to convert time to string, default is '%a %b %d %H:%M' */
+  /* internal */
   char buf[LINE_SIZE];
-  //
+  FILE *fp;
+  /* results */
   char system[48];
   char arch[48];
   char release[48];
@@ -133,7 +195,6 @@ struct system_info {
   char time_boot_s[32];
   GAUGE time_up_i;
   char time_up_s[16];
-  FILE *fp;
   GAUGE load_short; /*  1 min */
   GAUGE load_mid;   /*  5 min */
   GAUGE load_long;  /* 15 min */
@@ -141,7 +202,6 @@ struct system_info {
   GAUGE proc_running;
   GAUGE proc_blocked;
   COUNTER proc_new;
-  // epicsStrting val[40];
 };
 struct system_info *sys_info = NULL;
 
@@ -158,6 +218,8 @@ static long sys_info_init(int after)
     fprintf(stderr, "sys_info_init: can't open file '%s': %s\n", filename, strerror(errno));
   } else
     sys_info->fp = fp;
+  strncpy(sys_info->ifname,"eth0",sizeof(sys_info->ifname)-1);
+  strncpy(sys_info->timefmt,"%a %b %d %H:%M",sizeof(sys_info->timefmt)-1);
   sys_info_process(0);
   return 0;
 }
@@ -170,17 +232,23 @@ static long sys_info_init_record_si(stringinRecord *prec)
     break;
   case INST_IO: {
     const char *opt = prec->inp.value.instio.string;
-    if      (strcmp(opt,"PROC")==0)     prec->dpvt = sys_info_process;
-    else if (strcmp(opt,"SYSNAME")==0)  prec->dpvt = &sys_info->system;
-    else if (strcmp(opt,"MACHINE")==0)  prec->dpvt = &sys_info->arch;
-    else if (strcmp(opt,"RELEASE")==0)  prec->dpvt = &sys_info->release;
-    else if (strcmp(opt,"VERSION")==0)  prec->dpvt = &sys_info->version;
-    else if (strcmp(opt,"HOSTNAME")==0) prec->dpvt = &sys_info->hostname;
-    else if (strcmp(opt,"IPADDR")==0)   prec->dpvt = &sys_info->ipaddr;
-    else if (strcmp(opt,"OSNAME")==0)   prec->dpvt = &sys_info->osname;
-    else if (strcmp(opt,"BOOTIME")==0)  prec->dpvt = &sys_info->time_boot_s;
-    else if (strcmp(opt,"UPTIME")==0)   prec->dpvt = &sys_info->time_up_s;
+    int j, k; char name[16];
+    name[0] = '\0'; j = 0; k = sscanf(opt, "%15s %n", name, &j); opt += j;
+
+    if      (strcmp(name,"PROC")==0) {
+      prec->dpvt = sys_info_process;
+      sys_info_parse_options(name, opt); }
+    else if (strcmp(name,"SYSNAME")==0)  prec->dpvt = &sys_info->system;
+    else if (strcmp(name,"MACHINE")==0)  prec->dpvt = &sys_info->arch;
+    else if (strcmp(name,"RELEASE")==0)  prec->dpvt = &sys_info->release;
+    else if (strcmp(name,"VERSION")==0)  prec->dpvt = &sys_info->version;
+    else if (strcmp(name,"HOSTNAME")==0) prec->dpvt = &sys_info->hostname;
+    else if (strcmp(name,"IPADDR")==0)   prec->dpvt = &sys_info->ipaddr;
+    else if (strcmp(name,"OSNAME")==0)   prec->dpvt = &sys_info->osname;
+    else if (strcmp(name,"BOOTIME")==0)  prec->dpvt = &sys_info->time_boot_s;
+    else if (strcmp(name,"UPTIME")==0)   prec->dpvt = &sys_info->time_up_s;
     else prec->dpvt = NULL;
+
     if (prec->dpvt!=NULL)
       prec->udf = FALSE;
   } break;
@@ -199,12 +267,18 @@ static long sys_info_init_record_ai(aiRecord *prec)
     break;
   case INST_IO: {
     const char *opt = prec->inp.value.instio.string;
-    if      (strcmp(opt,"PROC")==0)     prec->dpvt = sys_info_process;
-    else if (strcmp(opt,"LA1min")==0)   prec->dpvt = &sys_info->load_short.val;
-    else if (strcmp(opt,"LA5min")==0)   prec->dpvt = &sys_info->load_mid.val;
-    else if (strcmp(opt,"LA15min")==0)  prec->dpvt = &sys_info->load_long.val;
-    else if (strcmp(opt,"UPTIME")==0)   prec->dpvt = &sys_info->time_up_i.val;
+    int j, k; char name[16];
+    name[0] = '\0'; j = 0; k = sscanf(opt, "%15s %n", name, &j); opt += j;
+
+    if      (strcmp(name,"PROC")==0) {
+      prec->dpvt = sys_info_process;
+      sys_info_parse_options(name, opt); }
+    else if (strcmp(name,"LA1min")==0)   prec->dpvt = &sys_info->load_short.val;
+    else if (strcmp(name,"LA5min")==0)   prec->dpvt = &sys_info->load_mid.val;
+    else if (strcmp(name,"LA15min")==0)  prec->dpvt = &sys_info->load_long.val;
+    else if (strcmp(name,"UPTIME")==0)   prec->dpvt = &sys_info->time_up_i.val;
     else prec->dpvt = NULL;
+
     if (prec->dpvt!=NULL)
       prec->udf = FALSE;
   } break;
@@ -213,6 +287,24 @@ static long sys_info_init_record_ai(aiRecord *prec)
     return S_db_badField;
   }
   return 0;
+}
+static int sys_info_parse_options(const char *name, const char *opt)
+{
+  int n = 0; char key[16], val[32];
+  while (opt != NULL && *opt != '\0') {
+    opt = parse_options(opt, key, sizeof(key), val, sizeof(val));
+    if (key[0]=='\0' && val[0]=='\0') {
+      break; /* end of options */
+    } else if (strcmp(key,"IFNAME")==0) {
+      strncpy(sys_info->ifname, val, sizeof(sys_info->ifname)-1);
+    } else if (strcmp(key,"TIMEFMT")==0) {
+      strncpy(sys_info->timefmt, val, sizeof(sys_info->timefmt)-1);
+    } else {
+      fprintf(stderr, "SysInfo @%s : unknown option '%s'\n", name, key);
+    }
+    n++;
+  }
+  return n;
 }
 #include <sys/utsname.h>
 #include <sys/socket.h>
@@ -235,13 +327,13 @@ static long sys_info_process(int iter)
       fprintf(stderr, "sys_info_init: call 'uname' failed: %s\n", strerror(errno));
     }
   }
-  if (iter==0) {
+  if (iter > 0 && sys_info->ipaddr[0]=='\0') {
     /* the following code is very specific, so we don't care about errors */
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock != -1) {
       struct ifreq ifr;
       memset(&ifr, 0, sizeof(ifr));
-      strncpy(ifr.ifr_name, "eth0", sizeof(ifr.ifr_name)-1);
+      strncpy(ifr.ifr_name, sys_info->ifname, sizeof(ifr.ifr_name)-1);
       if (ioctl(sock, SIOCGIFADDR, &ifr) != -1) {
         /* For compatibility only AF_INET addresses are returned by SIOCGIFADDR */
         struct sockaddr_in *sa = (struct sockaddr_in *)&ifr.ifr_addr;
@@ -272,7 +364,7 @@ static long sys_info_process(int iter)
       if (sys_info->time_boot_s[0] == '\0') {
         /* first apperance, need to make a string version */
         epicsTimeFromTime_t(&ets, sys_info->time_boot);
-        epicsTimeToStrftime(sys_info->time_boot_s, sizeof(sys_info->time_boot_s), "%a %b %d %H:%M", &ets);
+        epicsTimeToStrftime(sys_info->time_boot_s, sizeof(sys_info->time_boot_s), sys_info->timefmt, &ets);
       }
       sys_info->time_up = sys_info->time_current-sys_info->time_boot;
       sys_info->time_up_i.val = sys_info->time_up;
@@ -314,6 +406,7 @@ static long sys_info_process(int iter)
 
 static long cpu_info_init(int after);
 static long cpu_info_init_record(aiRecord *prec);
+static int  cpu_info_parse_options(const char *name, const char *opt);
 static long cpu_info_process(int iter);
 struct {
         long            number;
@@ -379,12 +472,18 @@ static long cpu_info_init_record(aiRecord *prec)
     break;
   case INST_IO: {
     const char *opt = prec->inp.value.instio.string;
-    if      (strcmp(opt,"PROC")==0)   prec->dpvt = cpu_info_process;
-    else if (strcmp(opt,"USER")==0)   prec->dpvt = &cpu_info->user.val;
-    else if (strcmp(opt,"NICE")==0)   prec->dpvt = &cpu_info->nice.val;
-    else if (strcmp(opt,"SYSTEM")==0) prec->dpvt = &cpu_info->system.val;
-    else if (strcmp(opt,"IDLE")==0)   prec->dpvt = &cpu_info->idle.val;
+    int j, k; char name[16];
+    name[0] = '\0'; j = 0; k = sscanf(opt, "%15s %n", name, &j); opt += j;
+
+    if      (strcmp(name,"PROC")==0) {
+      prec->dpvt = cpu_info_process;
+      cpu_info_parse_options(name, opt); }
+    else if (strcmp(name,"USER")==0)   prec->dpvt = &cpu_info->user.val;
+    else if (strcmp(name,"NICE")==0)   prec->dpvt = &cpu_info->nice.val;
+    else if (strcmp(name,"SYSTEM")==0) prec->dpvt = &cpu_info->system.val;
+    else if (strcmp(name,"IDLE")==0)   prec->dpvt = &cpu_info->idle.val;
     else prec->dpvt = NULL;
+
     if (prec->dpvt!=NULL)
       prec->udf = FALSE;
   } break;
@@ -393,6 +492,26 @@ static long cpu_info_init_record(aiRecord *prec)
     return S_db_badField;
   }
   return 0;
+}
+static int cpu_info_parse_options(const char *name, const char *opt)
+{
+  int n = 0; char key[16], val[32];
+  while (opt != NULL && *opt != '\0') {
+    opt = parse_options(opt, key, sizeof(key), val, sizeof(val));
+    if (key[0]=='\0' && val[0]=='\0') {
+      break; /* end of options */
+    } else if (strcmp(key,"NORM")==0) {
+      ;
+    } else if (strcmp(key,"PERCPU")==0) {
+      ;
+    } else if (strcmp(key,"PERCENT")==0) {
+      ;
+    } else {
+      fprintf(stderr, "CpuLoad @%s : unknown option '%s'\n", name, key);
+    }
+    n++;
+  }
+  return n;
 }
 static long cpu_info_process(int iter)
 {
@@ -487,6 +606,7 @@ static long cpu_info_process(int iter)
 
 static long mem_info_init(int after);
 static long mem_info_init_record(aiRecord *prec);
+static int  mem_info_parse_options(const char *name, const char *opt);
 static long mem_info_process(int iter);
 struct {
         long            number;
@@ -551,18 +671,24 @@ static long mem_info_init_record(aiRecord *prec)
     break;
   case INST_IO: {
     const char *opt = prec->inp.value.instio.string;
-    if      (strcmp(opt,"PROC")==0)     prec->dpvt = mem_info_process;
-    else if (strcmp(opt,"MEMAV")==0)    prec->dpvt = &mem_info->mem_total.val;
-    else if (strcmp(opt,"MEMFREE")==0)  prec->dpvt = &mem_info->mem_free.val;
-    else if (strcmp(opt,"MEMUSED")==0)  prec->dpvt = &mem_info->mem_used.val;
-    else if (strcmp(opt,"MEMSHRD")==0)  prec->dpvt = &mem_info->mem_shared.val;
-    else if (strcmp(opt,"MEMBUFF")==0)  prec->dpvt = &mem_info->mem_buffers.val;
-    else if (strcmp(opt,"MEMCACH")==0)  prec->dpvt = &mem_info->mem_cached.val;
-    else if (strcmp(opt,"SWAPAV")==0)   prec->dpvt = &mem_info->swap_total.val;
-    else if (strcmp(opt,"SWAPUSED")==0) prec->dpvt = &mem_info->swap_used.val;
-    else if (strcmp(opt,"SWAPFREE")==0) prec->dpvt = &mem_info->swap_free.val;
-    else if (strcmp(opt,"SWAPCACH")==0) prec->dpvt = &mem_info->swap_cached.val;
+    int j, k; char name[16];
+    name[0] = '\0'; j = 0; k = sscanf(opt, "%15s %n", name, &j); opt += j;
+
+    if      (strcmp(name,"PROC")==0) {
+      prec->dpvt = mem_info_process;
+      mem_info_parse_options(name, opt); }
+    else if (strcmp(name,"MEMAV")==0)    prec->dpvt = &mem_info->mem_total.val;
+    else if (strcmp(name,"MEMFREE")==0)  prec->dpvt = &mem_info->mem_free.val;
+    else if (strcmp(name,"MEMUSED")==0)  prec->dpvt = &mem_info->mem_used.val;
+    else if (strcmp(name,"MEMSHRD")==0)  prec->dpvt = &mem_info->mem_shared.val;
+    else if (strcmp(name,"MEMBUFF")==0)  prec->dpvt = &mem_info->mem_buffers.val;
+    else if (strcmp(name,"MEMCACH")==0)  prec->dpvt = &mem_info->mem_cached.val;
+    else if (strcmp(name,"SWAPAV")==0)   prec->dpvt = &mem_info->swap_total.val;
+    else if (strcmp(name,"SWAPUSED")==0) prec->dpvt = &mem_info->swap_used.val;
+    else if (strcmp(name,"SWAPFREE")==0) prec->dpvt = &mem_info->swap_free.val;
+    else if (strcmp(name,"SWAPCACH")==0) prec->dpvt = &mem_info->swap_cached.val;
     else prec->dpvt = NULL;
+
     if (prec->dpvt!=NULL)
       prec->udf = FALSE;
   } break;
@@ -571,6 +697,22 @@ static long mem_info_init_record(aiRecord *prec)
     return S_db_badField;
   }
   return 0;
+}
+static int mem_info_parse_options(const char *name, const char *opt)
+{
+  int n = 0; char key[16], val[32];
+  while (opt != NULL && *opt != '\0') {
+    opt = parse_options(opt, key, sizeof(key), val, sizeof(val));
+    if (key[0]=='\0' && val[0]=='\0') {
+      break; /* end of options */
+    } else if (strcmp(key,"UNITS")==0) {
+      ;
+    } else {
+      fprintf(stderr, "MemLoad @%s : unknown option '%s'\n", name, key);
+    }
+    n++;
+  }
+  return n;
 }
 static long mem_info_process(int iter)
 {
