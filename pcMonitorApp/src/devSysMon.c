@@ -54,7 +54,7 @@ static long read_ai(aiRecord *prec)
 {
   if (!prec->dpvt)
     return S_dev_NoInit;
-  const char *opt = prec->inp.value.vmeio.parm;
+  const char *opt = prec->inp.value.instio.string;
   if (opt[0]=='P' && opt[1]=='R' && opt[2]=='O' && opt[3]=='C')
     ((PROCESSFUN)prec->dpvt)(1);
   else
@@ -65,7 +65,7 @@ static long read_si(stringinRecord *prec)
 {
   if (!prec->dpvt)
     return S_dev_NoInit;
-  const char *opt = prec->inp.value.vmeio.parm;
+  const char *opt = prec->inp.value.instio.string;
   if (opt[0]=='P' && opt[1]=='R' && opt[2]=='O' && opt[3]=='C')
     ((PROCESSFUN)prec->dpvt)(1);
   else
@@ -168,8 +168,8 @@ static long sys_info_init_record_si(stringinRecord *prec)
     if(recGblInitConstantLink(&prec->inp,DBF_DOUBLE,&prec->val))
       prec->udf = FALSE;
     break;
-  case VME_IO: {
-    const char *opt = prec->inp.value.vmeio.parm;
+  case INST_IO: {
+    const char *opt = prec->inp.value.instio.string;
     if      (strcmp(opt,"PROC")==0)     prec->dpvt = sys_info_process;
     else if (strcmp(opt,"SYSNAME")==0)  prec->dpvt = &sys_info->system;
     else if (strcmp(opt,"MACHINE")==0)  prec->dpvt = &sys_info->arch;
@@ -197,8 +197,8 @@ static long sys_info_init_record_ai(aiRecord *prec)
     if(recGblInitConstantLink(&prec->inp,DBF_DOUBLE,&prec->val))
       prec->udf = FALSE;
     break;
-  case VME_IO: {
-    const char *opt = prec->inp.value.vmeio.parm;
+  case INST_IO: {
+    const char *opt = prec->inp.value.instio.string;
     if      (strcmp(opt,"PROC")==0)     prec->dpvt = sys_info_process;
     else if (strcmp(opt,"LA1min")==0)   prec->dpvt = &sys_info->load_short.val;
     else if (strcmp(opt,"LA5min")==0)   prec->dpvt = &sys_info->load_mid.val;
@@ -377,8 +377,8 @@ static long cpu_info_init_record(aiRecord *prec)
     if(recGblInitConstantLink(&prec->inp,DBF_DOUBLE,&prec->val))
       prec->udf = FALSE;
     break;
-  case VME_IO: {
-    const char *opt = prec->inp.value.vmeio.parm;
+  case INST_IO: {
+    const char *opt = prec->inp.value.instio.string;
     if      (strcmp(opt,"PROC")==0)   prec->dpvt = cpu_info_process;
     else if (strcmp(opt,"USER")==0)   prec->dpvt = &cpu_info->user.val;
     else if (strcmp(opt,"NICE")==0)   prec->dpvt = &cpu_info->nice.val;
@@ -549,8 +549,8 @@ static long mem_info_init_record(aiRecord *prec)
     if(recGblInitConstantLink(&prec->inp,DBF_DOUBLE,&prec->val))
       prec->udf = FALSE;
     break;
-  case VME_IO: {
-    const char *opt = prec->inp.value.vmeio.parm;
+  case INST_IO: {
+    const char *opt = prec->inp.value.instio.string;
     if      (strcmp(opt,"PROC")==0)     prec->dpvt = mem_info_process;
     else if (strcmp(opt,"MEMAV")==0)    prec->dpvt = &mem_info->mem_total.val;
     else if (strcmp(opt,"MEMFREE")==0)  prec->dpvt = &mem_info->mem_free.val;
