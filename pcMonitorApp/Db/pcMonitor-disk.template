@@ -53,3 +53,47 @@ record(ai, "$(BOOTPC):DISK:$(NAME):IO_TIME")
         field(PHAS, "2")
         field(PINI, "YES")
 }
+record(ai, "$(BOOTPC):DISK:$(NAME):TOTAL")
+{
+        field(DESC, "Total amount of disk space")
+        field(DTYP, "DiskStat")
+        field(INP, "@DF_TOTAL DEV='$(DEV)'")
+        field(PREC, "0")
+        field(EGU, "Kb")
+        field(SCAN, "$(SCAN)")
+        field(PHAS, "2")
+        field(PINI, "YES")
+}
+record(ai, "$(BOOTPC):DISK:$(NAME):USED")
+{
+        field(DESC, "Amount of disk space used")
+        field(DTYP, "DiskStat")
+        field(INP, "@DF_USED DEV='$(DEV)'")
+        field(PREC, "0")
+        field(EGU, "Kb")
+        field(SCAN, "$(SCAN)")
+        field(PHAS, "2")
+        field(PINI, "YES")
+}
+record(ai, "$(BOOTPC):DISK:$(NAME):RSRV")
+{
+        field(DESC, "Amount of disk space reserved")
+        field(DTYP, "DiskStat")
+        field(INP, "@DF_RSRV DEV='$(DEV)'")
+        field(PREC, "0")
+        field(EGU, "Kb")
+        field(SCAN, "$(SCAN)")
+        field(PHAS, "2")
+        field(PINI, "YES")
+}
+record(ai, "$(BOOTPC):DISK:$(NAME):FREE")
+{
+        field(DESC, "Amount of disk space available")
+        field(DTYP, "DiskStat")
+        field(INP, "@DF_FREE DEV='$(DEV)'")
+        field(PREC, "0")
+        field(EGU, "Kb")
+        field(SCAN, "$(SCAN)")
+        field(PHAS, "2")
+        field(PINI, "YES")
+}

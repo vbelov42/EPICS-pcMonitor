@@ -88,6 +88,42 @@ static void update_COUNTER (COUNTER *data, counter_t new, double rdt) {
     data->val = (new - data->cnt)*rdt;
   data->cnt = new; }
 
+typedef union {
+  struct {
+    unsigned char length;
+    char buf[sizeof(epicsString)-1];
+  };
+  struct {
+    unsigned char length;
+    char *ptr;
+  };
+} ssoString; /* short string optimization */
+void ssoString_set(ssoString *s, const char *p) {
+  if (s==NULL) return;
+  if (p==NULL) {
+    if (s->length < sizeof(ssoString)-2)
+      s->buf[0] = '\0';
+    else {
+      free(s->ptr);
+      s->ptr = NULL;
+    }
+    s->length = 0;
+  } else {
+    int k = strlen(p); if (k>255) k = 255;
+    if (k < sizeof(ssoString)-2)
+      strcpy(s->buf, p);
+    else {
+      s->ptr = (char*)malloc(k+1);
+      strncpy(s->ptr, p, k);
+    }
+    s->length = k;
+  }
+}
+char* ssoString_data(ssoString *s) {
+  if (s==NULL) return NULL;
+  return (s->length<sizeof(ssoString)-2) ? s->buf : s->ptr;
+}
+
 static long read_ai(aiRecord *prec)
 {
   if (!prec->dpvt)
@@ -847,11 +883,17 @@ epicsExportAddress(dset,devDiskStat);
 typedef struct {
   char name[DISK_NAME_SIZE];
   unsigned int sect_size; /* sector size */
+  ssoString mount;    /* mount point for a disk */
+  unsigned long fsid; /* filesystem ID provided by kernel */
   COUNTER read_ops;
   COUNTER read_bytes;
   COUNTER write_ops;
   COUNTER write_bytes;
   COUNTER io_time;
+  GAUGE df_total;
+  GAUGE df_used;
+  GAUGE df_reserved;
+  GAUGE df_free;
 } disk_stat;
 struct disks_info {
   /* config */
@@ -933,6 +975,57 @@ static unsigned int disk_get_sect_size(const char *name)
   }
   return size;
 }
+static ssoString disk_get_mount_point(const char *name)
+{
+  char buf[256]; FILE *fp; ssoString dir;
+  const char *filename = "/proc/mounts";
+  memset(&dir,0,sizeof(dir));
+  fp = fopen(filename, "r");
+  if (fp==NULL) {
+    fprintf(stderr, "disk_get_mount_point: can't open file '%s': %s\n", filename, strerror(errno));
+    return dir;
+  }
+  char *dev = NULL, *path = NULL;
+  while(fgets(buf,sizeof(buf),fp)!=NULL) {
+    char *p = buf;
+    while(isspace(*p)) p++;
+    dev = p;
+    while(*p!='\0' && !isspace(*p)) p++;
+    *p = '\0'; p++;
+    while(isspace(*p)) p++;
+    /* now dev is C-string with device name */
+    if (strncmp(dev,"/dev/",5)!=0)
+      continue; /* special mount points */
+    if (strcmp(dev+5,name)==0) {
+      path = p;
+      while(*p!='\0' && !isspace(*p)) p++;
+      *p = '\0'; p++;
+      break;
+    } else {
+      /* Most likely this is '/dev/disk/by-*' or '/dev/mapper/*' which
+         is actually symlinks to real device. Let's check this. */
+      char buf[256]; char *q = buf;
+      int k = readlink(dev,buf,sizeof(buf)-1);
+      if (k==-1) continue; /* it isn't symlink */
+      buf[k] = '\0'; /* this is how readlink works */
+      while(q[0]=='.' && q[1]=='/') q+=2;
+      while(q[0]=='.' && q[1]=='.' && q[2]=='/') q+=3;
+      if (strcmp(q,name)==0) {
+        path = p;
+        while(*p!='\0' && !isspace(*p)) p++;
+        *p = '\0'; p++;
+        break;
+      }
+    }
+  }
+  fclose(fp);
+  if (path!=NULL) {
+    ssoString_set(&dir,path);
+  } else {
+    fprintf(stderr, "disk_get_mount_point: can't find mount point for '%s': %s\n", name, strerror(errno));
+  }
+  return dir;
+}
 
 static long disks_info_init(int after)
 {
@@ -964,6 +1057,8 @@ static disk_stat* disks_info_parse_options(const char *name, const char *opt)
       disk = get_disk_stat(val);
       if (check_disk_presence(val)==0)
         fprintf(stderr, "DiskInfo @%s : can't find disk '%s'\n", name, val);
+      else if (disk->mount.length==0)
+        disk->mount = disk_get_mount_point(val);
     } else {
       fprintf(stderr, "DiskInfo @%s : unknown option '%s'\n", name, key);
     }
@@ -1005,6 +1100,22 @@ static long disks_info_init_record(aiRecord *prec)
       disk_stat *disk = disks_info_parse_options(name, opt);
       if (disk != NULL)
         prec->dpvt = &disk->io_time.val; }
+    else if (strcmp(name,"DF_TOTAL")==0) {
+      disk_stat *disk = disks_info_parse_options(name, opt);
+      if (disk != NULL)
+        prec->dpvt = &disk->df_total.val; }
+    else if (strcmp(name,"DF_USED")==0) {
+      disk_stat *disk = disks_info_parse_options(name, opt);
+      if (disk != NULL)
+        prec->dpvt = &disk->df_used.val; }
+    else if (strcmp(name,"DF_RSRV")==0) {
+      disk_stat *disk = disks_info_parse_options(name, opt);
+      if (disk != NULL)
+        prec->dpvt = &disk->df_reserved.val; }
+    else if (strcmp(name,"DF_FREE")==0) {
+      disk_stat *disk = disks_info_parse_options(name, opt);
+      if (disk != NULL)
+        prec->dpvt = &disk->df_free.val; }
     else
       prec->dpvt = NULL;
 
@@ -1017,6 +1128,7 @@ static long disks_info_init_record(aiRecord *prec)
   }
   return 0;
 }
+#include <sys/statvfs.h>
 static long disks_info_process(int iter)
 {
   int i, j, k;
@@ -1057,6 +1169,32 @@ static long disks_info_process(int iter)
         update_COUNTER(&disk->write_bytes, cnt[3], rdt);
         rdt *= 1e-3; /* ms to s */
         update_COUNTER(&disk->io_time, cnt[4], rdt);
+      }
+    }
+  }
+  for (i = 0; i < disks_info->num_disks; i++) {
+    disk_stat *disk = disks_info->disks[i];
+    if (disk!=NULL && disk->mount.length!=0) {
+      struct statvfs st;
+      j = statvfs(ssoString_data(&disk->mount), &st);
+      if (j==1) {
+        fprintf(stderr, "disk_info_process: statvfs failed for '%s': %s\n", ssoString_data(&disk->mount), strerror(errno));
+        continue;
+      }
+      if (disk->fsid == st.f_fsid || disk->fsid == 0) {
+        /* everything is good or new disk */
+        double f = 1.*st.f_frsize/1024;
+        update_GAUGE(&disk->df_total, st.f_blocks*f, 1.);
+        update_GAUGE(&disk->df_used, (st.f_blocks-st.f_bfree)*f, 1.);
+        update_GAUGE(&disk->df_reserved, (st.f_bfree-st.f_bavail)*f, 1.);
+        update_GAUGE(&disk->df_free, st.f_bavail*f, 1.);
+        if (disk->fsid == 0) disk->fsid = st.f_fsid;
+      } else {
+        /* probably disk is unmounted now */
+        update_GAUGE(&disk->df_total, 0, 1.);
+        update_GAUGE(&disk->df_used, 0, 1.);
+        update_GAUGE(&disk->df_reserved, 0, 1.);
+        update_GAUGE(&disk->df_free, 0, 1.);
       }
     }
   }
