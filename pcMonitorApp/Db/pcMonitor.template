@@ -50,8 +50,8 @@ record(stringin, "$(BOOTPC):SYS")
 {
         field(DESC, "Up time")
         field(DTYP, "SysInfo")
-	field(INP, "@PROC IFNAME='eth0'")
-	field(SCAN,"10 second")
+	field(INP,  "@PROC IFNAME='$(IFNAME)'")
+	field(SCAN, "$(SCAN)")
 	field(FLNK, "$(BOOTPC):UPTIME")
 	field(PINI, "YES")
 }
@@ -367,3 +367,28 @@ record(calc, "$(BOOTPC):LOAD")
 	field(HSV,  "MINOR")
 }
 
+#----------------------------------------------------
+#               Disk I/O statistis
+#----------------------------------------------------
+record(ai, "$(BOOTPC):DISKS")
+{
+        field(DESC, "Up time")
+        field(DTYP, "DiskStat")
+        field(INP, "@PROC")
+        field(SCAN,"$(SCAN)")
+        field(PHAS, "0")
+        field(PINI, "YES")
+}
+
+#----------------------------------------------------
+#               Network I/O statistis
+#----------------------------------------------------
+record(ai, "$(BOOTPC):NET")
+{
+        field(DESC, "Up time")
+        field(DTYP, "NetStat")
+        field(INP, "@PROC")
+        field(SCAN,"$(SCAN)")
+        field(PHAS, "0")
+        field(PINI, "YES")
+}

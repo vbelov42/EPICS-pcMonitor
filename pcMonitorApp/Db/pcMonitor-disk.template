@@ -1,0 +1,55 @@
+record(ai, "$(BOOTPC):DISK:$(NAME):READ:OPS")
+{
+        field(DESC, "Disk I/O read operations")
+        field(DTYP, "DiskStat")
+        field(INP, "@DISK_RDOP DEV='$(DEV)'")
+        field(PREC, "3")
+        field(EGU, "op/s")
+        field(SCAN, "$(SCAN)")
+        field(PHAS, "2")
+        field(PINI, "YES")
+}
+record(ai, "$(BOOTPC):DISK:$(NAME):READ")
+{
+        field(DESC, "Disk I/O read bytes")
+        field(DTYP, "DiskStat")
+        field(INP, "@DISK_RDBS DEV='$(DEV)'")
+        field(PREC, "1")
+        field(EGU, "b/s")
+        field(SCAN, "$(SCAN)")
+        field(PHAS, "2")
+        field(PINI, "YES")
+}
+record(ai, "$(BOOTPC):DISK:$(NAME):WRITE:OPS")
+{
+        field(DESC, "Disk I/O write operations")
+        field(DTYP, "DiskStat")
+        field(INP, "@DISK_WROP DEV='$(DEV)'")
+        field(PREC, "3")
+        field(EGU, "op/s")
+        field(SCAN, "$(SCAN)")
+        field(PHAS, "2")
+        field(PINI, "YES")
+}
+record(ai, "$(BOOTPC):DISK:$(NAME):WRITE")
+{
+        field(DESC, "Disk I/O write bytes")
+        field(DTYP, "DiskStat")
+        field(INP, "@DISK_WRBS DEV='$(DEV)'")
+        field(PREC, "1")
+        field(EGU, "b/s")
+        field(SCAN, "$(SCAN)")
+        field(PHAS, "2")
+        field(PINI, "YES")
+}
+record(ai, "$(BOOTPC):DISK:$(NAME):IO_TIME")
+{
+        field(DESC, "Time spent on disk I/O")
+        field(DTYP, "DiskStat")
+        field(INP, "@DISK_IOTM DEV='$(DEV)'")
+        field(PREC, "3")
+        field(EGU, "s/s")
+        field(SCAN, "$(SCAN)")
+        field(PHAS, "2")
+        field(PINI, "YES")
+}

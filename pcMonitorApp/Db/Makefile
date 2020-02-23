@@ -11,6 +11,8 @@ include $(TOP)/configure/CONFIG
 # Create and install (or just install)
 # databases, templates, substitutions like this
 DB += pcMonitor.template
+DB += pcMonitor-disk.template
+DB += pcMonitor-net.template
 
 #----------------------------------------------------
 # If <anyname>.db template is not named <anyname>*.template add

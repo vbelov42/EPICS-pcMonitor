@@ -1,4 +1,14 @@
-file "pcMonitor.template"
-{
-  { BOOTPC = "PC-MONITOR" }
+global { SCAN="10 second" }
+file "$(TOP)/db/pcMonitor.template" {
+  { IFNAME="eth0" }
+}
+file "$(TOP)/db/pcMonitor-disk.template" {
+pattern 
+  { NAME,  DEV   }
+  { root,  sda1  }
+}
+file "$(TOP)/db/pcMonitor-net.template" {
+pattern
+  { NAME,  DEV   }
+  { lan,   eth0  }
 }

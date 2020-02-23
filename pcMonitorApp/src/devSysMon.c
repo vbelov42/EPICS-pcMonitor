@@ -53,6 +53,7 @@
 #include <errno.h>
 #include <time.h>
 
+
 /*------------------------- Common definitions and functions ------------------*/
 
 typedef epicsUInt64  counter_t; /* 32 bits are not enough on modern systems */
@@ -811,6 +812,478 @@ static long mem_info_process(int iter)
   update_GAUGE(&mem_info->mem_used, mem_info->mem_total.val - mem_info->mem_free.val, 1.);
   update_GAUGE(&mem_info->swap_used, mem_info->swap_total.val - mem_info->swap_free.val, 1.);
   memcpy(&mem_info->time, &now, sizeof(now));
+  return 0;
+}
+
+
+/*------------------------------------------------------------*/
+/*         Disk I/O statistics                                */
+/*------------------------------------------------------------*/
+
+static long disks_info_init(int after);
+static long disks_info_init_record(aiRecord *prec);
+static long disks_info_process(int iter);
+struct {
+        long            number;
+        DEVSUPFUN       report;
+        DEVSUPFUN       init;
+        DEVSUPFUN       init_record_ai;
+        DEVSUPFUN       get_ioint_info;
+        DEVSUPFUN       read_ai;
+        DEVSUPFUN       special_linconv;
+} devDiskStat = {
+        6,
+        NULL,
+        disks_info_init,
+        disks_info_init_record,
+        NULL,
+        read_ai,
+        NULL
+};
+
+epicsExportAddress(dset,devDiskStat);
+
+#define DISK_NAME_SIZE 16
+typedef struct {
+  char name[DISK_NAME_SIZE];
+  unsigned int sect_size; /* sector size */
+  COUNTER read_ops;
+  COUNTER read_bytes;
+  COUNTER write_ops;
+  COUNTER write_bytes;
+  COUNTER io_time;
+} disk_stat;
+struct disks_info {
+  /* config */
+  /* internal */
+  epicsTimeStamp time;
+  char buf[LINE_SIZE];
+  FILE* fp;
+  /* results */
+  int num_disks;
+  disk_stat* disks[1];
+};
+struct disks_info *disks_info = NULL;
+
+
+static disk_stat* find_disk_stat(const char* name)
+/* given name, return corresponding disk_stat or NULL otherwise */
+{
+  if (disks_info == NULL)
+    return NULL;
+  if (disks_info != NULL) {
+    /* maybe we already have it? */
+    int i;
+    for (i = 0; i < disks_info->num_disks; i++) {
+      if (strncmp(disks_info->disks[i]->name, name, sizeof(disks_info->disks[0]->name))==0)
+        return disks_info->disks[i];
+    }
+  }
+  return NULL;
+}
+static disk_stat* get_disk_stat(const char* name)
+/* find existing or create a new disk_stat for a given name */
+{
+  disk_stat *disk = find_disk_stat(name);
+  if (disk != NULL)
+    return disk;
+  if (disks_info == NULL)
+    return NULL;
+
+  /* need to create a new one */
+  if (disks_info->num_disks > 0) {
+    /* increasing structure size only if more than 1 disk */
+    size_t new_size = sizeof(struct disks_info)+sizeof(disk_stat*)*(disks_info->num_disks+1);
+    /* yes, increasing by one is slow, but we care more about memory consumption */
+    struct disks_info *old = disks_info;
+    struct disks_info *new = (struct disks_info*)malloc(new_size);
+    memcpy(new, old, new_size-sizeof(disk_stat*));
+    new->disks[disks_info->num_disks] = NULL;
+    disks_info = new;
+    free(old);
+  }
+  disk = (disk_stat*)malloc(sizeof(disk_stat));
+  memset(disk, 0, sizeof(disk_stat));
+  strncpy(disk->name, name, sizeof(disk->name));
+  disks_info->disks[disks_info->num_disks++] = disk;
+  return disk;
+}
+static int check_disk_presence(const char *name)
+{
+  if (disks_info == NULL)
+    return 0;
+  
+  rewind(disks_info->fp);
+  while(fgets(disks_info->buf,sizeof(disks_info->buf),disks_info->fp)!=NULL) {
+    char name2[DISK_NAME_SIZE]; 
+    sscanf(disks_info->buf, "%*u %*u %s", name2);
+    if (strcmp(name2,name)==0)
+      return 1;
+  }
+  return 0;
+}
+static unsigned int disk_get_sect_size(const char *name)
+{
+  char buf[256]; FILE *fp; unsigned int size = 512;
+  snprintf(buf, sizeof(buf), "/sys/block/%s/queue/hw_sector_size", name);
+  fp = fopen(buf, "r");
+  if (fp) {
+    fscanf(fp, "%d", &size);
+    fclose(fp);
+  }
+  return size;
+}
+
+static long disks_info_init(int after)
+{
+  if (disks_info != NULL) {
+    if (after > 0)
+      disks_info_process(0);
+    return 0;
+  }
+
+  const char* filename = "/proc/diskstats";
+  FILE *fp = fopen(filename,"r");
+  if (fp==NULL) {
+    fprintf(stderr, "disk_info_init: can't open file '%s': %s\n", filename, strerror(errno));
+    return S_dev_noDeviceFound;
+  }
+  disks_info = (struct disks_info*)malloc(sizeof(struct disks_info));
+  memset(disks_info, 0, sizeof(struct disks_info));
+  disks_info->fp = fp;
+  return 0;
+}
+static disk_stat* disks_info_parse_options(const char *name, const char *opt)
+{
+  int n = 0; char key[16], val[32]; disk_stat *disk = NULL;
+  while (opt != NULL && *opt != '\0') {
+    opt = parse_options(opt, key, sizeof(key), val, sizeof(val));
+    if (key[0]=='\0' && val[0]=='\0') {
+      break; /* end of options */
+    } else if (strcmp(key,"DEV")==0 && val[0]!='\0') {
+      disk = get_disk_stat(val);
+      if (check_disk_presence(val)==0)
+        fprintf(stderr, "DiskInfo @%s : can't find disk '%s'\n", name, val);
+    } else {
+      fprintf(stderr, "DiskInfo @%s : unknown option '%s'\n", name, key);
+    }
+    n++;
+  }
+  return disk;
+}
+static long disks_info_init_record(aiRecord *prec)
+{
+  switch (prec->inp.type) {
+  case CONSTANT:
+    if(recGblInitConstantLink(&prec->inp,DBF_DOUBLE,&prec->val))
+      prec->udf = FALSE;
+    break;
+  case INST_IO: {
+    const char *opt = prec->inp.value.instio.string;
+    int j, k; char name[16];
+    name[0] = '\0'; j = 0; k = sscanf(opt, "%15s %n", name, &j); opt += j;
+
+    if      (strcmp(name,"PROC")==0)
+      prec->dpvt = disks_info_process;
+    else if (strcmp(name,"DISK_RDOP")==0) {
+      disk_stat *disk = disks_info_parse_options(name, opt);
+      if (disk != NULL)
+        prec->dpvt = &disk->read_ops.val; }
+    else if (strcmp(name,"DISK_RDBS")==0) {
+      disk_stat *disk = disks_info_parse_options(name, opt);
+      if (disk != NULL)
+        prec->dpvt = &disk->read_bytes.val; }
+    else if (strcmp(name,"DISK_WROP")==0) {
+      disk_stat *disk = disks_info_parse_options(name, opt);
+      if (disk != NULL)
+        prec->dpvt = &disk->write_ops.val; }
+    else if (strcmp(name,"DISK_WRBS")==0) {
+      disk_stat *disk = disks_info_parse_options(name, opt);
+      if (disk != NULL)
+        prec->dpvt = &disk->write_bytes.val; }
+    else if (strcmp(name,"DISK_IOTM")==0) {
+      disk_stat *disk = disks_info_parse_options(name, opt);
+      if (disk != NULL)
+        prec->dpvt = &disk->io_time.val; }
+    else
+      prec->dpvt = NULL;
+
+    if (prec->dpvt != NULL)
+      prec->udf = FALSE;
+  } break;
+  default:
+    recGblRecordError(S_db_badField, (void*)prec, "init_record: illegial INP field");
+    return S_db_badField;
+  }
+  return 0;
+}
+static long disks_info_process(int iter)
+{
+  int i, j, k;
+  epicsTimeStamp now; double dt;
+
+  if (disks_info == NULL)
+    return -1;
+  rewind(disks_info->fp);
+  epicsTimeGetCurrent(&now);
+  dt = epicsTimeDiffInSeconds(&now, &disks_info->time);
+  for(i=0; fgets(disks_info->buf,sizeof(disks_info->buf),disks_info->fp)!=NULL; i++) {
+    char *buf = disks_info->buf; disk_stat *disk = NULL;
+    char name[DISK_NAME_SIZE]; 
+    j = 0; k = sscanf(disks_info->buf, "%*u %*u %s %n", name, &j); buf += j;
+    if (k==1)
+      disk = find_disk_stat(name);
+    if (disk != NULL) {
+      unsigned long cnt[5];
+      j = 0; k = sscanf(buf, "%lu %*u %lu %*u %lu %*u %lu %*u %*u %lu %*u %n", &cnt[0], &cnt[1], &cnt[2], &cnt[3], &cnt[4], &j); buf += j;
+      if (disk->sect_size==0)
+        disk->sect_size = disk_get_sect_size(name);
+      cnt[1] *= disk->sect_size, cnt[3] *= disk->sect_size;
+      if (k != 5)
+        /* scanf failed somewhere */
+        continue;
+      if (iter == 0) {
+        /* the first iteration */
+        disk->read_ops.cnt = cnt[0];
+        disk->read_bytes.cnt = cnt[1];
+        disk->write_ops.cnt = cnt[2];
+        disk->write_bytes.cnt = cnt[3];
+        disk->io_time.cnt = cnt[4];
+      } else {
+        double rdt = 1./dt;
+        update_COUNTER(&disk->read_ops, cnt[0], rdt);
+        update_COUNTER(&disk->read_bytes, cnt[1], rdt);
+        update_COUNTER(&disk->write_ops, cnt[2], rdt);
+        update_COUNTER(&disk->write_bytes, cnt[3], rdt);
+        rdt *= 1e-3; /* ms to s */
+        update_COUNTER(&disk->io_time, cnt[4], rdt);
+      }
+    }
+  }
+  memcpy(&disks_info->time, &now, sizeof(now));
+  return 0;
+}
+
+/*------------------------------------------------------------*/
+/*         Network I/O statistics                             */
+/*------------------------------------------------------------*/
+
+static long net_info_init(int after);
+static long net_info_init_record(aiRecord *prec);
+static long net_info_process(int iter);
+struct {
+        long            number;
+        DEVSUPFUN       report;
+        DEVSUPFUN       init;
+        DEVSUPFUN       init_record_ai;
+        DEVSUPFUN       get_ioint_info;
+        DEVSUPFUN       read_ai;
+        DEVSUPFUN       special_linconv;
+} devNetStat = {
+        6,
+        NULL,
+        net_info_init,
+        net_info_init_record,
+        NULL,
+        read_ai,
+        NULL
+};
+
+epicsExportAddress(dset,devNetStat);
+
+#define IFACE_NAME_SIZE 16
+typedef struct {
+  char name[IFACE_NAME_SIZE];
+  COUNTER recv_packets;
+  COUNTER recv_bytes;
+  COUNTER trans_packets;
+  COUNTER trans_bytes;
+} if_stat;
+struct net_info {
+  /* config */
+  /* internal */
+  epicsTimeStamp time;
+  char buf[LINE_SIZE];
+  FILE* fp;
+  /* result */
+  int num_ifs;
+  if_stat* ifs[1];
+};
+struct net_info *net_info = NULL;
+
+
+static if_stat* find_if_stat(const char* name)
+{
+  if (net_info == NULL)
+    return NULL;
+  if (net_info != NULL) {
+    /* maybe we already have it? */
+    int i;
+    for (i = 0; i < net_info->num_ifs; i++) {
+      if (strncmp(net_info->ifs[i]->name, name, sizeof(net_info->ifs[0]->name))==0)
+        return net_info->ifs[i];
+    }
+  }
+  return NULL;
+}
+static if_stat* get_if_stat(const char* name)
+{
+  if_stat *iface = find_if_stat(name);
+  if (iface != NULL)
+    return iface;
+  if (net_info == NULL)
+    return NULL;
+
+  /* need to create a new one */
+  if (net_info->num_ifs > 0) {
+    /* increasing structure size only if more than 1 interface */
+    size_t new_size = sizeof(struct net_info)+sizeof(if_stat*)*(net_info->num_ifs+1);
+    /* yes, increasing by one is slow, but we care more about memory consumption */
+    struct net_info *old = net_info;
+    struct net_info *new = (struct net_info*)malloc(new_size);
+    memcpy(new, old, new_size-sizeof(if_stat*));
+    new->ifs[net_info->num_ifs] = NULL;
+    net_info = new;
+    free(old);
+  }
+  iface = (if_stat*)malloc(sizeof(if_stat));
+  memset(iface, 0, sizeof(if_stat));
+  strncpy(iface->name, name, sizeof(iface->name));
+  net_info->ifs[net_info->num_ifs++] = iface;
+  return iface;
+}
+static int check_iface_presence(const char *name)
+{
+  if (net_info == NULL)
+    return 0;
+  
+  rewind(net_info->fp);
+  while(fgets(net_info->buf,sizeof(net_info->buf),net_info->fp)!=NULL) {
+    char name2[IFACE_NAME_SIZE]; 
+    sscanf(net_info->buf, "%s", name2);
+    if (strncmp(name2,name,strlen(name))==0)
+      return 1;
+  }
+  return 0;
+}
+
+static long net_info_init(int after)
+{
+  if (net_info != NULL) {
+    if (after > 0)
+      net_info_process(0);
+    return 0;
+  }
+
+  const char* filename = "/proc/net/dev";
+  FILE *fp = fopen(filename,"r");
+  if (fp==NULL) {
+    fprintf(stderr, "net_info_init: can't open file '%s': %s\n", filename, strerror(errno));
+    return S_dev_noDeviceFound;
+  }
+  net_info = (struct net_info*)malloc(sizeof(struct net_info));
+  memset(net_info, 0, sizeof(struct net_info));
+  net_info->fp = fp;
+  return 0;
+}
+static if_stat* net_info_parse_options(const char *name, const char *opt)
+{
+  int n = 0; char key[16], val[32]; if_stat *iface = NULL;
+  while (opt != NULL && *opt != '\0') {
+    opt = parse_options(opt, key, sizeof(key), val, sizeof(val));
+    if (key[0]=='\0' && val[0]=='\0') {
+      break; /* end of options */
+    } else if (strcmp(key,"DEV")==0 && val[0]!='\0') {
+      iface = get_if_stat(val);
+      if (check_iface_presence(val)==0)
+        fprintf(stderr, "NetInfo @%s : can't find interface '%s'\n", name, val);
+    } else {
+      fprintf(stderr, "NetInfo @%s : unknown option '%s'\n", name, key);
+    }
+    n++;
+  }
+  return iface;
+}
+static long net_info_init_record(aiRecord *prec)
+{
+  switch (prec->inp.type) {
+  case CONSTANT:
+    if(recGblInitConstantLink(&prec->inp,DBF_DOUBLE,&prec->val))
+      prec->udf = FALSE;
+    break;
+  case INST_IO: {
+    const char *opt = prec->inp.value.instio.string;
+    int j, k; char name[16];
+    name[0] = '\0'; j = 0; k = sscanf(opt, "%15s %n", name, &j); opt += j;
+
+    if      (strcmp(name,"PROC")==0)
+      prec->dpvt = net_info_process;
+    else if (strcmp(name,"NET_RXPC")==0) {
+      if_stat *iface = net_info_parse_options(name, opt);
+      if (iface != NULL)
+        prec->dpvt = &iface->recv_packets.val; }
+    else if (strcmp(name,"NET_RXBS")==0) {
+      if_stat *iface = net_info_parse_options(name, opt);
+      if (iface != NULL)
+        prec->dpvt = &iface->recv_bytes.val; }
+    else if (strcmp(name,"NET_TXPC")==0) {
+      if_stat *iface = net_info_parse_options(name, opt);
+      if (iface != NULL)
+        prec->dpvt = &iface->trans_packets.val; }
+    else if (strcmp(name,"NET_TXBS")==0) {
+      if_stat *iface = net_info_parse_options(name, opt);
+      if (iface != NULL)
+        prec->dpvt = &iface->trans_bytes.val; }
+    else
+      prec->dpvt = NULL;
+
+    if (prec->dpvt != NULL)
+      prec->udf = FALSE;
+  } break;
+  default:
+    recGblRecordError(S_db_badField, (void*)prec, "init_record: illegial INP field");
+    return S_db_badField;
+  }
+  return 0;
+}
+static long net_info_process(int iter)
+{
+  int i, j, k;
+  epicsTimeStamp now; double dt;
+
+  if (net_info==NULL)
+    return -1;
+  rewind(net_info->fp);
+  epicsTimeGetCurrent(&now);
+  dt = epicsTimeDiffInSeconds(&now, &net_info->time);
+  for(i=0; fgets(net_info->buf,sizeof(net_info->buf),net_info->fp)!=NULL; i++) {
+    char *buf = net_info->buf; if_stat *iface = NULL;
+    char name[DISK_NAME_SIZE]; 
+    j = 0; k = sscanf(net_info->buf, "%s %n", name, &j); buf += j;
+    j = strlen(name)-1; if (name[j] == ':') name[j] = '\0';
+    iface = find_if_stat(name);
+    if (iface != NULL) {
+      unsigned long cnt[4];
+      j = 0; k = sscanf(buf, "%lu %lu %*u %*u %*u %*u %*u %*u %lu %lu %*u %*u %*u %*u %*u %*u %n", &cnt[0], &cnt[1], &cnt[2], &cnt[3], &j); buf += j;
+      if (k != 4)
+        /* scanf failed somewhere */
+        continue;
+      if (iter == 0) {
+        /* the first iteration */
+        iface->recv_packets.cnt = cnt[1];
+        iface->recv_bytes.cnt = cnt[0];
+        iface->trans_packets.cnt = cnt[3];
+        iface->trans_bytes.cnt = cnt[2];
+      } else {
+        double rdt = 1./dt;
+        update_COUNTER(&iface->recv_packets, cnt[1], rdt);
+        update_COUNTER(&iface->recv_bytes, cnt[0], rdt);
+        update_COUNTER(&iface->trans_packets, cnt[3], rdt);
+        update_COUNTER(&iface->trans_bytes, cnt[2], rdt);
+      }
+    }
+  }
+  memcpy(&net_info->time, &now, sizeof(now));
   return 0;
 }
 
