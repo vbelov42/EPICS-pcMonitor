@@ -251,7 +251,7 @@ epicsExportAddress(dset,devSysInfoAi);
 struct system_info {
   /* config */
   char ifname[16]; /* interface to take address from, default is 'eth0' */
-  char timefmt[16]; /* format to convert time to string, default is '%a %b %d %H:%M' */
+  char timefmt[24]; /* format to convert time to string, default is '%a %b %d %H:%M' */
   /* internal */
   epicsTimeStamp time;
   char buf[LINE_SIZE];
@@ -267,7 +267,6 @@ struct system_info {
   time_t time_current;
   time_t time_boot;
   time_t time_up;
-  char time_boot_f[16];
   char time_boot_s[32];
   GAUGE time_up_i;
   char time_up_s[16];
@@ -410,7 +409,7 @@ static long sys_info_process(int iter)
       fprintf(stderr, "sys_info_init: call 'uname' failed: %s\n", strerror(errno));
     }
   }
-  if (iter > 0 && sys_info->ipaddr[0]=='\0') {
+  if (iter==0 && sys_info->ipaddr[0]=='\0') {
     /* the following code is very specific, so we don't care about errors */
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock != -1) {
@@ -587,6 +586,8 @@ static long cpu_info_init_record(aiRecord *prec)
     if (prec->dpvt != NULL) {
       prec->udf = FALSE;
       strncpy(prec->egu, ((cpu_info->units&CPU_UNITS_PERCENT)?"%":""), sizeof(prec->egu)-1);
+    } else {
+      fprintf(stderr, "CpuInfo : unknown mode '%s'\n", name);
     }
   } break;
   default:
@@ -608,23 +609,23 @@ static int cpu_info_parse_options(const char *name, const char *opt)
       else if (val[0]=='0' && val[1]=='\0')
         cpu_info->units &= ~CPU_UNITS_NORM;
       else
-        fprintf(stderr, "CpuLoad @%s : bad value '%s'\n", name, val);
+        fprintf(stderr, "CpuInfo @%s : bad value '%s'\n", name, val);
     } else if (strcmp(key,"PERCPU")==0) {
       if (val[0]=='\0' || (val[0]=='1' && val[1]=='\0'))
         cpu_info->units |= CPU_UNITS_PERCPU;
       else if (val[0]=='0' && val[1]=='\0')
         cpu_info->units &= ~CPU_UNITS_PERCPU;
       else
-        fprintf(stderr, "CpuLoad @%s : bad value '%s'\n", name, val);
+        fprintf(stderr, "CpuInfo @%s : bad value '%s'\n", name, val);
     } else if (strcmp(key,"PERCENT")==0) {
       if (val[0]=='\0' || (val[0]=='1' && val[1]=='\0'))
         cpu_info->units |= CPU_UNITS_PERCENT;
       else if (val[0]=='0' && val[1]=='\0')
         cpu_info->units &= ~CPU_UNITS_PERCENT;
       else
-        fprintf(stderr, "CpuLoad @%s : bad value '%s'\n", name, val);
+        fprintf(stderr, "CpuInfo @%s : bad value '%s'\n", name, val);
     } else {
-      fprintf(stderr, "CpuLoad @%s : unknown option '%s'\n", name, key);
+      fprintf(stderr, "CpuInfo @%s : unknown option '%s'\n", name, key);
     }
     n++;
   }
@@ -814,6 +815,9 @@ static long mem_info_init_record(aiRecord *prec)
 
     if (prec->dpvt!=NULL)
       prec->udf = FALSE;
+    else {
+      fprintf(stderr, "MemInfo : unknown mode '%s'\n", name);
+    }
   } break;
   default:
     recGblRecordError(S_db_badField, (void*)prec, "init_record: illegial INP field");
@@ -831,7 +835,7 @@ static int mem_info_parse_options(const char *name, const char *opt)
     } else if (strcmp(key,"UNITS")==0) {
       ;
     } else {
-      fprintf(stderr, "MemLoad @%s : unknown option '%s'\n", name, key);
+      fprintf(stderr, "MemInfo @%s : unknown option '%s'\n", name, key);
     }
     n++;
   }
@@ -1136,8 +1140,11 @@ static long disks_info_init_record(aiRecord *prec)
     else
       prec->dpvt = NULL;
 
-    if (prec->dpvt != NULL)
+    if (prec->dpvt != NULL) {
       prec->udf = FALSE;
+    } else {
+      fprintf(stderr, "DiskInfo : unknown mode '%s'\n", name);
+    }
   } break;
   default:
     recGblRecordError(S_db_badField, (void*)prec, "init_record: illegial INP field");
@@ -1392,8 +1399,11 @@ static long net_info_init_record(aiRecord *prec)
     else
       prec->dpvt = NULL;
 
-    if (prec->dpvt != NULL)
+    if (prec->dpvt != NULL) {
       prec->udf = FALSE;
+    } else {
+      fprintf(stderr, "NetInfo : unknown mode '%s'\n", name);
+    }
   } break;
   default:
     recGblRecordError(S_db_badField, (void*)prec, "init_record: illegial INP field");
