@@ -353,6 +353,10 @@ static long sys_info_init_record_ai(aiRecord *prec)
     else if (strcmp(name,"LA5min")==0)   prec->dpvt = &sys_info->load_mid.val;
     else if (strcmp(name,"LA15min")==0)  prec->dpvt = &sys_info->load_long.val;
     else if (strcmp(name,"UPTIME")==0)   prec->dpvt = &sys_info->time_up_i.val;
+    else if (strcmp(name,"PRCS_TOT")==0) prec->dpvt = &sys_info->proc_sched.val;
+    else if (strcmp(name,"PRCS_RUN")==0) prec->dpvt = &sys_info->proc_running.val;
+    else if (strcmp(name,"PRCS_BLK")==0) prec->dpvt = &sys_info->proc_blocked.val;
+    else if (strcmp(name,"PRCS_NEW")==0) prec->dpvt = &sys_info->proc_new.val;
     else prec->dpvt = NULL;
 
     if (prec->dpvt!=NULL)
@@ -520,6 +524,7 @@ struct cpu_info {
   FILE* fp;
   /* results */
   int count; /* number of cores */
+  GAUGE cores;
   COUNTER user;
   COUNTER nice;
   COUNTER system;
@@ -566,10 +571,17 @@ static long cpu_info_init_record(aiRecord *prec)
     if      (strcmp(name,"PROC")==0) {
       prec->dpvt = cpu_info_process;
       cpu_info_parse_options(name, opt); }
+    else if (strcmp(name,"NUM")==0)    prec->dpvt = &cpu_info->cores.val;
     else if (strcmp(name,"USER")==0)   prec->dpvt = &cpu_info->user.val;
     else if (strcmp(name,"NICE")==0)   prec->dpvt = &cpu_info->nice.val;
     else if (strcmp(name,"SYSTEM")==0) prec->dpvt = &cpu_info->system.val;
     else if (strcmp(name,"IDLE")==0)   prec->dpvt = &cpu_info->idle.val;
+    else if (strcmp(name,"IOWAIT")==0) prec->dpvt = &cpu_info->iowait.val;
+    else if (strcmp(name,"IRQ")==0)    prec->dpvt = &cpu_info->irq.val;
+    else if (strcmp(name,"SIRQ")==0)   prec->dpvt = &cpu_info->softirq.val;
+    else if (strcmp(name,"STEAL")==0)  prec->dpvt = &cpu_info->steal.val;
+    else if (strcmp(name,"GUEST")==0)  prec->dpvt = &cpu_info->guest.val;
+    else if (strcmp(name,"GUESTN")==0) prec->dpvt = &cpu_info->guest_nice.val;
     else prec->dpvt = NULL;
 
     if (prec->dpvt != NULL) {
@@ -641,19 +653,23 @@ static long cpu_info_process(int iter)
         sys_info->time_boot = strtoul(cpu_info->buf+6, NULL, 10);
     } else if (strncmp(cpu_info->buf,"processes ",10)==0) {
       if (sys_info!=NULL) {
-        update_COUNTER(&sys_info->proc_new, strtoul(cpu_info->buf+10,NULL,10), 1.);
+        if (iter==0)
+          sys_info->proc_new.cnt = strtoul(cpu_info->buf+10,NULL,10);
+        else
+          update_COUNTER(&sys_info->proc_new, strtoul(cpu_info->buf+10,NULL,10), 1./dt);
       }
     } else if (strncmp(cpu_info->buf,"procs_running ",14)==0) {
       if (sys_info!=NULL)
-        update_GAUGE(&sys_info->proc_running, strtoul(cpu_info->buf+10,NULL,10), 1.);
+        update_GAUGE(&sys_info->proc_running, strtoul(cpu_info->buf+14,NULL,10), 1.);
     } else if (strncmp(cpu_info->buf,"procs_blocked ",14)==0) {
       if (sys_info!=NULL)
-        update_GAUGE(&sys_info->proc_blocked, strtoul(cpu_info->buf+10,NULL,10), 1.);
+        update_GAUGE(&sys_info->proc_blocked, strtoul(cpu_info->buf+14,NULL,10), 1.);
     }
   }
   if (iter==0) {
     cpu_info->tick = sysconf(_SC_CLK_TCK);
     cpu_info->count = ncpu;
+    cpu_info->cores.val = ncpu;
     cpu_info->user.cnt = cnt[0];
     cpu_info->nice.cnt = cnt[1];
     cpu_info->system.cnt = cnt[2];
@@ -671,6 +687,7 @@ static long cpu_info_process(int iter)
       if ( (cpu_info->units&CPU_UNITS_PERCPU))  f /= ncpu;
       if ( (cpu_info->units&CPU_UNITS_PERCENT)) f *= 100;
     }
+    update_GAUGE(&cpu_info->cores, ncpu, 1.);
     update_COUNTER(&cpu_info->guest_nice, cnt[9], f); s += cpu_info->guest_nice.val;
     update_COUNTER(&cpu_info->guest, cnt[8], f); s += cpu_info->guest.val;
     update_COUNTER(&cpu_info->steal, cnt[7], f); s += cpu_info->steal.val;
@@ -783,13 +800,13 @@ static long mem_info_init_record(aiRecord *prec)
     if      (strcmp(name,"PROC")==0) {
       prec->dpvt = mem_info_process;
       mem_info_parse_options(name, opt); }
-    else if (strcmp(name,"MEMAV")==0)    prec->dpvt = &mem_info->mem_total.val;
+    else if (strcmp(name,"MEMTOT")==0)   prec->dpvt = &mem_info->mem_total.val;
     else if (strcmp(name,"MEMFREE")==0)  prec->dpvt = &mem_info->mem_free.val;
     else if (strcmp(name,"MEMUSED")==0)  prec->dpvt = &mem_info->mem_used.val;
     else if (strcmp(name,"MEMSHRD")==0)  prec->dpvt = &mem_info->mem_shared.val;
     else if (strcmp(name,"MEMBUFF")==0)  prec->dpvt = &mem_info->mem_buffers.val;
     else if (strcmp(name,"MEMCACH")==0)  prec->dpvt = &mem_info->mem_cached.val;
-    else if (strcmp(name,"SWAPAV")==0)   prec->dpvt = &mem_info->swap_total.val;
+    else if (strcmp(name,"SWAPTOT")==0)  prec->dpvt = &mem_info->swap_total.val;
     else if (strcmp(name,"SWAPUSED")==0) prec->dpvt = &mem_info->swap_used.val;
     else if (strcmp(name,"SWAPFREE")==0) prec->dpvt = &mem_info->swap_free.val;
     else if (strcmp(name,"SWAPCACH")==0) prec->dpvt = &mem_info->swap_cached.val;

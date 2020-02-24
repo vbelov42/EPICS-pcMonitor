@@ -1,394 +1,476 @@
-# This is the template containing channels 
-# with status data for the givem bootPC
-# the status conatins: CPU load
-#                      MEM usage info
-#                      Boot time info
+# This database template contains channels providing information about
+# computer system where softIOC is running. This includes cpu load, memory
+# amount, disk and network I/O.
+#
 
+#-------------------------------------------------
+#                   IOC info
+#-------------------------------------------------
 
-record (calcout, "$(BOOTPC):CNT")
+record(calcout, "$(IOC):HEARTBEAT")
 {
-    field (DESC, "Seconds since last reboot")
-    field (EGU,  "s")
-    field (SCAN, "1 second")
-    field (PINI, "YES")
-    field (INPA, "$(BOOTPC):CNT")
-    field (CALC, "A+1")
-    field (OCAL, "A&1")
-    field (DOPT, "Use OCAL")
-    field (OUT,  "$(BOOTPC):WD PP")
-}
-
-record (bo, "$(BOOTPC):WD")
-{
-}
-
-record(calc,"$(BOOTPC):HBTMOD") {
-    field(DESC, "Heartbeat mod 9")
+    field(DESC, "IOC heartbeat, 1Hz counter")
     field(SCAN, "1 second")
-    field(CALC, "A%9")
-    field(INPA, "$(BOOTPC):HBT.VAL .NPP.NMS")
+    field(CALC, "(A<2147483647)?A+1:1")
+    field(INPA, "$(P):HEARTBEAT")
     field(EGU,  "ticks")
     field(PREC, "0")
 }
-record(calc,"$(BOOTPC):HBT") {
-    field(DESC, "IOC heartbeat")
+record(calc, "$(IOC):HEARTBEAT:99")
+{
+    field(DESC, "IOC heartbeat mod 99")
     field(SCAN, "1 second")
-    field(FLNK, "$(BOOTPC):HBTMOD.VAL ")
-    field(CALC, "A>=B?0:A+1")
-    field(INPA, "$(BOOTPC):HBT.VAL .NPP.NMS")
-    field(INPB, "98")
+    field(CALC, "A%100")
+    field(INPA, "$(P):HEARTBEAT.VAL .NPP.NMS")
     field(EGU,  "ticks")
     field(PREC, "0")
+}
+record(stringin, "$(IOC):EpicsVersion") {
+    field(DESC, "EPICS Base Version")
+    field(DTYP, "getenv")
+    field(INP, "@EPICS_VERSION_FULL")
+    field(PINI, "YES")
+    field(DISP, 1)
 }
 
 #-------------------------------------------------
-#               SYSTEM INFO
-#------------------------------------------------
+#                   SYSTEM info
+#-------------------------------------------------
 
-# processing record
-record(stringin, "$(BOOTPC):SYS")
+# processing record:
+#   This record that actually does processing and prepares all other records
+#   on the device support level.
+record(stringin, "$(P):SYS")
 {
-        field(DESC, "Up time")
-        field(DTYP, "SysInfo")
-	field(INP,  "@PROC IFNAME='$(IFNAME)'")
-	field(SCAN, "$(SCAN)")
-	field(FLNK, "$(BOOTPC):UPTIME")
-	field(PINI, "YES")
+    field(DESC, "")
+    field(DTYP, "SysInfo")
+    field(INP,  "@PROC IFNAME='$(IFNAME)' TIMEFMT='$(TODFORMAT)'")
+    field(SCAN, "$(SCAN)")
+    field(PINI, "YES")
+    field(FLNK, "$(P):TIME:SYS_UP")
 }
 
 # --- uname ---
-record(stringin, "$(BOOTPC):SYSNAME")
+record(stringin, "$(P):SYS:NAME")
 {
-        field(DESC, "Up time")
-        field(DTYP, "SysInfo")
-        field(INP, "@SYSNAME")
-        field(PINI, "YES")
+    field(DESC, "System kernel name")
+    field(DTYP, "SysInfo")
+    field(INP, "@SYSNAME")
+    field(PINI, "YES")
 }
-
-record(stringin, "$(BOOTPC):RELEASE")
+record(stringin, "$(P):SYS:RELEASE")
 {
-        field(DESC, "Up time")
-        field(DTYP, "SysInfo")
-        field(INP, "@RELEASE")
-        field(PINI, "YES")
+    field(DESC, "System kernel release")
+    field(DTYP, "SysInfo")
+    field(INP, "@RELEASE")
+    field(PINI, "YES")
 }
-
-record(stringin, "$(BOOTPC):VERSION")
+record(stringin, "$(P):SYS:VERSION")
 {
-        field(DESC, "Up time")
-        field(DTYP, "SysInfo")
-        field(INP, "@VERSION")
-        field(PINI, "YES")
+    field(DESC, "System kernel version")
+    field(DTYP, "SysInfo")
+    field(INP, "@VERSION")
+    field(PINI, "YES")
 }
-
-record(stringin, "$(BOOTPC):MACHINE")
+record(stringin, "$(P):SYS:ARCH")
 {
-        field(DESC, "Up time")
-        field(DTYP, "SysInfo")
-        field(INP, "@MACHINE")
-        field(PINI, "YES")
+    field(DESC, "Machine hardware name")
+    field(DTYP, "SysInfo")
+    field(INP, "@MACHINE")
+    field(PINI, "YES")
 }
-
-record(stringin, "$(BOOTPC):HOSTNAME")
+record(stringin, "$(P):SYS:HOSTNAME")
 {
-        field(DESC, "Up time")
-        field(DTYP, "SysInfo")
-        field(INP, "@HOSTNAME")
-        field(PINI, "YES")
+    field(DESC, "Network node hostname")
+    field(DTYP, "SysInfo")
+    field(INP, "@HOSTNAME")
+    field(PINI, "YES")
 }
-
-record(stringin, "$(BOOTPC):IPADDR")
+record(stringin, "$(P):SYS:IPADDR")
 {
-        field(DESC, "Up time")
-        field(DTYP, "SysInfo")
-        field(INP, "@IPADDR")
-        #field(SCAN,"10 second")
-        field(PINI, "YES")
+    field(DESC, "Netword node IP address")
+    field(DTYP, "SysInfo")
+    field(INP, "@IPADDR")
+    field(PINI, "YES")
 }
 
 # --- LSB info ---
-record(stringin, "$(BOOTPC):OSNAME")
+record(stringin, "$(P):SYS:OSNAME")
 {
-        field(DESC, "Up time")
-        field(DTYP, "SysInfo")
-        field(INP, "@OSNAME")
-        field(PINI, "YES")
+    field(DESC, "Operating system description")
+    field(DTYP, "SysInfo")
+    field(INP, "@OSNAME")
+    field(PINI, "YES")
 }
 
 # --- TIME ---
-record(stringin, "$(BOOTPC):TIME")
+record(stringin, "$(P):TIME")
 {
-        field(DTYP, "Soft Timestamp")
-        field(TSEL, "$(BOOTPC):HBT.TIME CP")
-        field(INP, "@%a %b %d %H:%M")
+    field(DESC, "Current ioc time")
+    field(DTYP, "Soft Timestamp")
+    field(INP,  "@$(TODFORMAT)")
+    field(SCAN, "1 second")
 }
-
-record(stringin, "$(BOOTPC):BOOTTIME")
+record(stringin, "$(P):TIME:START")
 {
-        field(DESC, "Boot time")
-        field(DTYP, "SysInfo")
-        field(INP, "@BOOTIME")
-	field(PINI, "YES")
+    field(DESC, "Time of ioc startup")
+    field(DTYP, "Soft Timestamp")
+    field(INP,  "@$(TODFORMAT)")
+    field(PINI, "YES")
 }
-
-record(stringin, "$(BOOTPC):UPTIME")
+record(stringin, "$(P):TIME:BOOT")
 {
-        field(DESC, "Up time")
-        field(DTYP, "SysInfo")
-	field(INP, "@UPTIME")
-	field(SCAN,"10 second")
-	field(FLNK, "$(BOOTPC):UPTIME_T")
-	field(PINI, "YES")
+    field(DESC, "Time when system booted")
+    field(DTYP, "SysInfo")
+    field(INP, "@BOOTIME")
+    field(PINI, "YES")
 }
-
-record(ai, "$(BOOTPC):UPTIME_T")
+record(stringin, "$(P):TIME:SYS_UP")
 {
-        field(DESC, "Up time")
-        field(DTYP, "SysInfo")
-	field(INP, "@UPTIME")
-	field(SCAN,"10 second")
-#	field(FLNK, "$(BOOTPC):LOAD1MIN")
-	field(PINI, "YES")
+    field(DESC, "Time since system boot")
+    field(DTYP, "SysInfo")
+    field(INP, "@UPTIME")
+    field(FLNK, "$(P):TIME:SYS_UP_T")
+}
+record(ai, "$(P):TIME:SYS_UP_T")
+{
+    field(DESC, "Time since system boot, number")
+    field(DTYP, "SysInfo")
+    field(INP, "@UPTIME")
+    field(FLNK, "$(P):SYS:LOAD:1MIN")
 }
 
 # --- LOAD Average ---
-record(ai, "$(BOOTPC):LOAD1MIN")
+record(ai, "$(P):SYS:LOAD:1MIN")
 {
-        field(DESC, "Avg Load")
-        field(DTYP, "SysInfo")
-	field(INP, "@LA1min")
-        field(SCAN,"10 second")
-	field(PREC,"2")
-	field(PINI, "YES")
-	field(FLNK,"$(BOOTPC):LOAD5MIN")
+    field(DESC, "System load average (1 min)")
+    field(DTYP, "SysInfo")
+    field(INP, "@LA1min")
+    field(PREC, "2")
+    field(FLNK, "$(P):SYS:LOAD:5MIN")
+}
+record(ai, "$(P):SYS:LOAD:5MIN")
+{
+    field(DESC, "System load average (5 min)")
+    field(DTYP, "SysInfo")
+    field(INP, "@LA5min")
+    field(PREC, "2")
+    field(FLNK, "$(P):SYS:LOAD:15MIN")
+}
+record(ai, "$(P):SYS:LOAD:15MIN")
+{
+    field(DESC, "System load average (15 min)")
+    field(DTYP, "SysInfo")
+    field(INP, "@LA15min")
+    field(PREC, "2")
+    field(FLNK, "$(P):SYS:PROCS:TOT")
 }
 
-record(ai, "$(BOOTPC):LOAD5MIN")
+# --- LOAD Average ---
+record(ai, "$(P):SYS:PROCS:TOT")
 {
-        field(DESC, "Avg Load")
-        field(DTYP, "SysInfo")
-        field(INP, "@LA5min")
-	field(PREC,"2")
-        field(FLNK,"$(BOOTPC):LOAD15MIN")
+    field(DESC, "Number of existing processes (+threads)")
+    field(DTYP, "SysInfo")
+    field(INP, "@PRCS_TOT")
+    field(EGU, "prcs")
+    field(FLNK, "$(P):SYS:PROCS:RUN")
 }
-record(ai, "$(BOOTPC):LOAD15MIN")
+record(ai, "$(P):SYS:PROCS:RUN")
 {
-        field(DESC, "Avg Load")
-        field(DTYP, "SysInfo")
-        field(INP, "@LA15min")
-	field(PREC,"2")
+    field(DESC, "Number of runnable processes (+threads)")
+    field(DTYP, "SysInfo")
+    field(INP, "@PRCS_RUN")
+    field(EGU, "prcs")
+    field(FLNK, "$(P):SYS:PROCS:BLK")
 }
-
-#----------------------------------------------------
-#                   MEMORY STATUS
-#----------------------------------------------------
-
-# $(BOOTPC):MEM record is the process record that synchronises all other MEM records# on the device supprot level 
-
-record(ai, "$(BOOTPC):MEM")
+record(ai, "$(P):SYS:PROCS:BLK")
 {
-        field(DESC, "Avg Load")
-        field(DTYP, "MemLoad")
-        field(SCAN,"5 second")
-	field(PREC,"0")
-        field(INP, "@PROC UNITS=K")
-	field(PINI,"YES")
-	field(FLNK,"$(BOOTPC):MEMAV")
+    field(DESC, "Number of processes waiting for I/O")
+    field(DTYP, "SysInfo")
+    field(INP, "@PRCS_BLK")
+    field(EGU, "prcs")
+    field(FLNK, "$(P):SYS:PROCS:NEW")
 }
-
-
-record(ai, "$(BOOTPC):MEMAV")
+record(ai, "$(P):SYS:PROCS:NEW")
 {
-        field(DESC, "Avg Load")
-        field(DTYP, "MemLoad")
-	field(PREC,"0")	
-        field(INP, "@MEMAV")
-	field(EGU, "KB")
-        field(FLNK,"$(BOOTPC):MEMUSED")
-}
-
-record(ai, "$(BOOTPC):MEMUSED")
-{
-        field(DESC, "Avg Load")
-        field(DTYP, "MemLoad")
-	field(PREC,"0")
-        field(INP, "@MEMUSED")
-	field(EGU, "KB")
-        field(FLNK,"$(BOOTPC):MEMFREE")
-}
-record(ai, "$(BOOTPC):MEMFREE")
-{
-        field(DESC, "Avg Load")
-        field(DTYP, "MemLoad")
-	field(PREC,"0")
-        field(INP, "@MEMFREE")
-	field(EGU, "KB")
-        field(FLNK,"$(BOOTPC):MEMSHRD")
-}
-
-record(ai, "$(BOOTPC):MEMSHRD")
-{
-        field(DESC, "Avg Load")
-        field(DTYP, "MemLoad")
-	field(PREC,"0")
-        field(INP, "@MEMSHRD")
-	field(EGU, "KB")
-        field(FLNK,"$(BOOTPC):MEMBUFF")
-}
-
-record(ai, "$(BOOTPC):MEMBUFF")
-{
-        field(DESC, "Avg Load")
-        field(DTYP, "MemLoad")
-	field(PREC,"0")
-        field(INP, "@MEMBUFF")
-	field(EGU, "KB")
-	field(FLNK,"$(BOOTPC):MEMCACH")
-}
-
-record(ai, "$(BOOTPC):MEMCACH")
-{
-        field(DESC, "Avg Load")
-        field(DTYP, "MemLoad")
-	field(PREC,"0")
-        field(INP, "@MEMCACH")
-	field(EGU, "KB")
-	field(FLNK,"$(BOOTPC):SWAPAV")
-}
-
-record(ai, "$(BOOTPC):SWAPAV")
-{
-        field(DESC, "Avg Load")
-        field(DTYP, "MemLoad")
-	field(PREC,"0")	
-        field(INP, "@SWAPAV")
-	field(EGU, "KB")
-        field(FLNK,"$(BOOTPC):SWAPUSED")
-}
-
-record(ai, "$(BOOTPC):SWAPUSED")
-{
-        field(DESC, "Avg Load")
-        field(DTYP, "MemLoad")
-	field(PREC,"0")
-        field(INP, "@SWAPUSED")
-	field(EGU, "KB")
-        field(FLNK,"$(BOOTPC):SWAPFREE")
-}
-record(ai, "$(BOOTPC):SWAPFREE")
-{
-        field(DESC, "Avg Load")
-        field(DTYP, "MemLoad")
-	field(PREC,"0")
-        field(INP, "@SWAPFREE")
-	field(EGU, "KB")
-        field(FLNK,"$(BOOTPC):SWAPCACH")
-}
-record(ai, "$(BOOTPC):SWAPCACH")
-{
-        field(DESC, "Avg Load")
-        field(DTYP, "MemLoad")
-	field(PREC,"0")
-	field(EGU, "KB")
-        field(INP, "@SWAPCACH")
+    field(DESC, "Rate of processes created")
+    field(DTYP, "SysInfo")
+    field(INP, "@PRCS_NEW")
+    field(PREC, "2")
+    field(EGU, "prcs/s")
 }
 
 #----------------------------------------------------
-#               CPU load STATUS
+#                   CPU statistics
 #----------------------------------------------------
 
-# $(BOOTPC):CPU record is the process record that synchronises all other CPU records# on the device supprot level 
-
-record(ai, "$(BOOTPC):CPU")
+# processing record
+record(ai, "$(P):CPU")
 {
-        field(DESC, "Avg Load")
-        field(DTYP, "CpuLoad")
-        field(SCAN,"5 second")
-        field(INP, "@PROC NORM=1")
-	field(PINI,"YES")
-	field(FLNK,"$(BOOTPC):CPUIDLE")
+    field(DESC, "")
+    field(DTYP, "CpuLoad")
+    field(INP, "@PROC NORM=1")
+    field(SCAN, "$(SCAN)")
+    field(PINI, "YES")
+    field(FLNK, "$(P):CPU:NUM")
+}
+record(ai, "$(P):CPU:NUM")
+{
+    field(DESC, "Number of active cores")
+    field(DTYP, "CpuLoad")
+    field(INP, "@NUM")
+    field(PINI, "YES")
+    field(FLNK, "$(P):CPU:USER")
+}
+record(ai, "$(P):CPU:USER")
+{
+    field(DESC, "CPU time spent in user mode")
+    field(DTYP, "CpuLoad")
+    field(INP, "@USER")
+    field(PREC, "2")
+    field(EGU, "%")
+    field(FLNK, "$(P):CPU:NICE")
+}
+record(ai, "$(P):CPU:NICE")
+{
+    field(DESC, "CPU time spent in user with low priority")
+    field(DTYP, "CpuLoad")
+    field(INP, "@NICE")
+    field(PREC, "2")
+    field(EGU, "%")
+    field(FLNK, "$(P):CPU:SYSTEM")
+}
+record(ai, "$(P):CPU:SYSTEM")
+{
+    field(DESC, "CPU time spent in system mode")
+    field(DTYP, "CpuLoad")
+    field(INP, "@SYSTEM")
+    field(PREC, "2")
+    field(EGU, "%")
+    field(FLNK, "$(P):CPU:IDLE")
+}
+record(ai, "$(P):CPU:IDLE")
+{
+    field(DESC, "CPU time spent in idle task")
+    field(DTYP, "CpuLoad")
+    field(INP, "@IDLE")
+    field(PREC, "2")
+    field(EGU, "%")
+    field(FLNK, "$(P):CPU:IOWAIT")
+}
+record(ai, "$(P):CPU:IOWAIT")
+{
+    field(DESC, "CPU time spent waiting for I/O")
+    field(DTYP, "CpuLoad")
+    field(INP, "@IOWAIT")
+    field(PREC, "2")
+    field(EGU, "%")
+    field(FLNK, "$(P):CPU:IRQ")
+}
+record(ai, "$(P):CPU:IRQ")
+{
+    field(DESC, "CPU time servicing interrupts")
+    field(DTYP, "CpuLoad")
+    field(INP, "@IRQ")
+    field(PREC, "2")
+    field(EGU, "%")
+    field(FLNK, "$(P):CPU:SOFTIRQ")
+}
+record(ai, "$(P):CPU:SOFTIRQ")
+{
+    field(DESC, "CPU time servicing softirqs")
+    field(DTYP, "CpuLoad")
+    field(INP, "@SIRQ")
+    field(PREC, "2")
+    field(EGU, "%")
+    field(FLNK, "$(P):CPU:STEAL")
+}
+record(ai, "$(P):CPU:STEAL")
+{
+    field(DESC, "CPU time spent in virtual host")
+    field(DTYP, "CpuLoad")
+    field(INP, "@STEAL")
+    field(PREC, "2")
+    field(EGU, "%")
+    field(FLNK, "$(P):CPU:GUEST")
+}
+record(ai, "$(P):CPU:GUEST")
+{
+    field(DESC, "CPU time spent in virtual guests")
+    field(DTYP, "CpuLoad")
+    field(INP, "@GUEST")
+    field(PREC, "2")
+    field(EGU, "%")
+    field(FLNK, "$(P):CPU:NICE_GUEST")
+}
+record(ai, "$(P):CPU:NICE_GUEST")
+{
+    field(DESC, "CPU time spent in virtual niced guests")
+    field(DTYP, "CpuLoad")
+    field(INP, "@GUESTN")
+    field(PREC, "2")
+    field(EGU, "%")
+    field(FLNK, "$(P):CPU:LOAD")
+}
+record(calc, "$(P):CPU:LOAD")
+{
+    field(DESC, "Combined CPU time for user+nice+sys")
+    field(INPA, "$(P):CPU:USER")
+    field(INPB, "$(P):CPU:NICE")
+    field(INPC, "$(P):CPU:SYSTEM")
+    field(CALC, "A + B + C")
+    field(PREC, "2")
+    field(EGU, "%")
+    field(HOPR, "100")
+    field(HIHI, "90")
+    field(HIGH, "70")
+    field(HHSV, "MAJOR")
+    field(HSV,  "MINOR")
+    field(FLNK, "$(P):CPU:OTHER")
+}
+record(calc, "$(P):CPU:OTHER")
+{
+    field(DESC, "Combined CPU time spent for hidden uses")
+    field(INPA, "$(P):CPU:IRQ")
+    field(INPB, "$(P):CPU:SOFTIRQ")
+    field(INPC, "$(P):CPU:STEAL")
+    field(INPD, "$(P):CPU:GUEST")
+    field(INPE, "$(P):CPU:NICE_GUEST")
+    field(CALC, "A+B+C+D+E")
+    field(PREC, "2")
+    field(EGU, "%")
 }
 
+#----------------------------------------------------
+#                 MEMORY statistics
+#----------------------------------------------------
 
-record(ai, "$(BOOTPC):CPUIDLE")
+# processing record
+record(ai, "$(P):MEM")
 {
-        field(DESC, "Avg Load")
-        field(DTYP, "CpuLoad")
-        field(PREC,"2")
-        field(INP, "@IDLE")
-	field(EGU, "%")
-        field(FLNK,"$(BOOTPC):CPUNICE")
+    field(DESC, "")
+    field(DTYP, "MemLoad")
+    field(INP, "@PROC UNITS=K")
+    field(SCAN,"$(SCAN)")
+    field(PINI,"YES")
+    field(FLNK,"$(P):MEM:TOTAL")
 }
-
-record(ai, "$(BOOTPC):CPUNICE")
+record(ai, "$(P):MEM:TOTAL")
 {
-        field(DESC, "Avg Load")
-        field(DTYP, "CpuLoad")
-        field(INP, "@NICE")
-	field(EGU, "%")
-	field(PREC,"2")
-
-        field(FLNK,"$(BOOTPC):CPUSYSTEM")
+    field(DESC, "Total amount of usable RAM")
+    field(DTYP, "MemLoad")
+    field(INP, "@MEMTOT")
+    field(PREC,"0")
+    field(EGU, "KB")
+    field(FLNK,"$(P):MEM:USED")
 }
-
-record(ai, "$(BOOTPC):CPUSYSTEM")
+record(ai, "$(P):MEM:USED")
 {
-        field(DESC, "Avg Load")
-        field(DTYP, "CpuLoad")
-        field(INP, "@SYSTEM")
-	field(PREC,"2")
-	field(EGU, "%")
-        field(FLNK,"$(BOOTPC):CPUUSER")
+    field(DESC, "Amount of used memory")
+    field(DTYP, "MemLoad")
+    field(INP, "@MEMUSED")
+    field(PREC,"0")
+    field(EGU, "KB")
+    field(FLNK,"$(P):MEM:FREE")
 }
-
-record(ai, "$(BOOTPC):CPUUSER")
+record(ai, "$(P):MEM:FREE")
 {
-        field(DESC, "Avg Load")
-        field(DTYP, "CpuLoad")
-	field(PREC,"2")
-        field(INP, "@USER")
-	field(EGU, "%")
-	field(FLNK,"$(BOOTPC):LOAD")
+    field(DESC, "Amount of free memory")
+    field(DTYP, "MemLoad")
+    field(INP, "@MEMFREE")
+    field(PREC,"0")
+    field(EGU, "KB")
+    field(FLNK,"$(P):MEM:SHARED")
 }
-
-record(calc, "$(BOOTPC):LOAD")
+record(ai, "$(P):MEM:SHARED")
 {
-        field(DESC, "CPU LOAD")
-	field(PREC,"2")
-        field(INPA, "$(BOOTPC):CPUUSER")
-	field(INPB, "$(BOOTPC):CPUNICE")
-	field(INPC, "$(BOOTPC):CPUSYSTEM")
-	field(CALC, "A + B + C")
-	field(EGU, "%")
-	field(HOPR, "100")
-	field(HIHI, "90")
-	field(HIGH, "70")
-	field(HHSV, "MAJOR")
-	field(HSV,  "MINOR")
+    field(DESC, "Amount of shared memory")
+    field(DTYP, "MemLoad")
+    field(INP, "@MEMSHRD")
+    field(PREC,"0")
+    field(EGU, "KB")
+    field(FLNK,"$(P):MEM:BUFFERS")
+}
+record(ai, "$(P):MEM:BUFFERS")
+{
+    field(DESC, "Amount of disk buffers")
+    field(DTYP, "MemLoad")
+    field(INP, "@MEMBUFF")
+    field(PREC,"0")
+    field(EGU, "KB")
+    field(FLNK,"$(P):MEM:CACHE")
+}
+record(ai, "$(P):MEM:CACHE")
+{
+    field(DESC, "Amount of files cache")
+    field(DTYP, "MemLoad")
+    field(INP, "@MEMCACH")
+    field(PREC,"0")
+    field(EGU, "KB")
+    field(FLNK,"$(P):SWAP:TOTAL")
+}
+record(ai, "$(P):SWAP:TOTAL")
+{
+    field(DESC, "Total amount of swap")
+    field(DTYP, "MemLoad")
+    field(INP, "@SWAPTOT")
+    field(PREC,"0")
+    field(EGU, "KB")
+    field(FLNK,"$(P):SWAP:USED")
+}
+record(ai, "$(P):SWAP:USED")
+{
+    field(DESC, "Amount of used swap")
+    field(DTYP, "MemLoad")
+    field(INP, "@SWAPUSED")
+    field(PREC,"0")
+    field(EGU, "KB")
+    field(FLNK,"$(P):SWAP:FREE")
+}
+record(ai, "$(P):SWAP:FREE")
+{
+    field(DESC, "Amount of free swap")
+    field(DTYP, "MemLoad")
+    field(INP, "@SWAPFREE")
+    field(PREC,"0")
+    field(EGU, "KB")
+    field(FLNK,"$(P):SWAP:CACHE")
+}
+record(ai, "$(P):SWAP:CACHE")
+{
+    field(DESC, "Memory pages that have copy in swap")
+    field(DTYP, "MemLoad")
+    field(PREC,"0")
+    field(EGU, "KB")
+    field(INP, "@SWAPCACH")
 }
 
 #----------------------------------------------------
 #               Disk I/O statistis
 #----------------------------------------------------
-record(ai, "$(BOOTPC):DISKS")
+
+# processing record
+record(ai, "$(P):DISKS")
 {
-        field(DESC, "Up time")
-        field(DTYP, "DiskStat")
-        field(INP, "@PROC")
-        field(SCAN,"$(SCAN)")
-        field(PHAS, "0")
-        field(PINI, "YES")
+    field(DESC, "Up time")
+    field(DTYP, "DiskStat")
+    field(INP, "@PROC")
+    field(SCAN, "$(SCAN)")
+    field(PHAS, "0")
+    field(PINI, "YES")
 }
 
 #----------------------------------------------------
 #               Network I/O statistis
 #----------------------------------------------------
-record(ai, "$(BOOTPC):NET")
+
+# processing record
+record(ai, "$(P):NET")
 {
-        field(DESC, "Up time")
-        field(DTYP, "NetStat")
-        field(INP, "@PROC")
-        field(SCAN,"$(SCAN)")
-        field(PHAS, "0")
-        field(PINI, "YES")
+    field(DESC, "Up time")
+    field(DTYP, "NetStat")
+    field(INP, "@PROC")
+    field(SCAN, "$(SCAN)")
+    field(PHAS, "0")
+    field(PINI, "YES")
 }

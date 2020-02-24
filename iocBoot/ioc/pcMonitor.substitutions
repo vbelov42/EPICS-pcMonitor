@@ -1,13 +1,17 @@
-global { SCAN="10 second" }
-file "$(TOP)/db/pcMonitor.template" {
-  { IFNAME="eth0" }
+global { P="$(IOC)", SCAN="10 second" }
+
+file "$(TOP)/db/pcMonitor.template"
+{
+  { IFNAME="eth0", TODFORMAT="%b %d %H:%M:%S" }
 }
-file "$(TOP)/db/pcMonitor-disk.template" {
-pattern 
+file "$(TOP)/db/pcMonitor-disk.template"
+{
+pattern
   { NAME,  DEV   }
   { root,  sda1  }
 }
-file "$(TOP)/db/pcMonitor-net.template" {
+file "$(TOP)/db/pcMonitor-net.template"
+{
 pattern
   { NAME,  DEV   }
   { lan,   eth0  }

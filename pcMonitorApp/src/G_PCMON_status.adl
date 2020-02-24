@@ -215,7 +215,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):MEMUSED"
+		chan="$(PC):MEM:USED"
 		clr=29
 		bclr=1
 	}
@@ -231,7 +231,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):MEMFREE"
+		chan="$(PC):MEM:FREE"
 		clr=29
 		bclr=1
 	}
@@ -247,7 +247,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):MEMSHRD"
+		chan="$(PC):MEM:SHARED"
 		clr=29
 		bclr=1
 	}
@@ -263,7 +263,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):MEMBUFF"
+		chan="$(PC):MEM:BUFFERS"
 		clr=29
 		bclr=1
 	}
@@ -279,7 +279,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):SWAPAV"
+		chan="$(PC):SWAP:TOTAL"
 		clr=29
 		bclr=1
 	}
@@ -295,7 +295,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):SWAPUSED"
+		chan="$(PC):SWAP:USED"
 		clr=29
 		bclr=1
 	}
@@ -311,7 +311,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):SWAPFREE"
+		chan="$(PC):SWAP:FREE"
 		clr=29
 		bclr=1
 	}
@@ -327,7 +327,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):SWAPCACH"
+		chan="$(PC):SWAP:CACHE"
 		clr=29
 		bclr=1
 	}
@@ -343,7 +343,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):MEMUSED.EGU"
+		chan="$(PC):MEM:USED.EGU"
 		clr=14
 		bclr=2
 	}
@@ -358,7 +358,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):MEMFREE.EGU"
+		chan="$(PC):MEM:FREE.EGU"
 		clr=14
 		bclr=2
 	}
@@ -373,7 +373,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):MEMSHRD.EGU"
+		chan="$(PC):MEM:SHARED.EGU"
 		clr=14
 		bclr=2
 	}
@@ -388,7 +388,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):MEMBUFF.EGU"
+		chan="$(PC):MEM:BUFFERS.EGU"
 		clr=14
 		bclr=2
 	}
@@ -403,7 +403,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):SWAPAV.EGU"
+		chan="$(PC):SWAP:TOTAL.EGU"
 		clr=14
 		bclr=2
 	}
@@ -418,7 +418,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):SWAPUSED.EGU"
+		chan="$(PC):SWAP:USED.EGU"
 		clr=14
 		bclr=2
 	}
@@ -433,7 +433,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):SWAPFREE.EGU"
+		chan="$(PC):SWAP:FREE.EGU"
 		clr=14
 		bclr=2
 	}
@@ -448,7 +448,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):SWAPCACH.EGU"
+		chan="$(PC):SWAP:CACHE.EGU"
 		clr=14
 		bclr=2
 	}
@@ -503,7 +503,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):BOOTTIME"
+		chan="$(PC):TIME:BOOT"
 		clr=14
 		bclr=3
 	}
@@ -546,7 +546,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):VERSION"
+		chan="$(PC):SYS:VERSION"
 		clr=14
 		bclr=3
 	}
@@ -573,7 +573,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):IPADDR"
+		chan="$(PC):SYS:IPADDR"
 		clr=14
 		bclr=3
 	}
@@ -601,7 +601,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):SYSNAME"
+		chan="$(PC):SYS:NAME"
 		clr=14
 		bclr=3
 	}
@@ -628,7 +628,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):UPTIME"
+		chan="$(PC):TIME:SYS_UP"
 		clr=14
 		bclr=3
 	}
@@ -656,7 +656,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):RELEASE"
+		chan="$(PC):SYS:RELEASE"
 		clr=14
 		bclr=3
 	}
@@ -683,7 +683,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):MACHINE"
+		chan="$(PC):SYS:ARCH"
 		clr=14
 		bclr=3
 	}
@@ -713,7 +713,7 @@ oval {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):MEMBUFF"
+		chan="$(PC):MEM:BUFFERS"
 	}
 }
 oval {
@@ -739,7 +739,7 @@ oval {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):SWAPAV"
+		chan="$(PC):SWAP:TOTAL"
 	}
 }
 oval {
@@ -765,7 +765,7 @@ oval {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):SWAPUSED"
+		chan="$(PC):SWAP:USED"
 	}
 }
 oval {
@@ -791,7 +791,7 @@ oval {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):SWAPFREE"
+		chan="$(PC):SWAP:FREE"
 	}
 }
 oval {
@@ -817,7 +817,7 @@ oval {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):SWAPCACH"
+		chan="$(PC):SWAP:CACHE"
 	}
 }
 oval {
@@ -854,7 +854,7 @@ oval {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):MEMSHRD"
+		chan="$(PC):MEM:SHARED"
 	}
 }
 oval {
@@ -880,7 +880,7 @@ oval {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):MEMFREE"
+		chan="$(PC):MEM:FREE"
 	}
 }
 text {
@@ -904,7 +904,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):HBT"
+		chan="$(PC):HEARTBEAT:99"
 		clr=29
 		bclr=1
 	}
@@ -935,7 +935,7 @@ oval {
 	}
 	"dynamic attribute" {
 		vis="if not zero"
-		chan="$(PC):WD"
+		chan="$(PC):HEARTBEAT"
 	}
 }
 rectangle {
@@ -965,7 +965,7 @@ rectangle {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):HBT"
+		chan="$(PC):HEARTBEAT:99"
 	}
 }
 composite {
@@ -998,7 +998,7 @@ composite {
 				height=15
 			}
 			monitor {
-				chan="$(PC):LOAD"
+				chan="$(PC):CPU:LOAD"
 				clr=29
 				bclr=1
 			}
@@ -1014,7 +1014,7 @@ composite {
 				height=15
 			}
 			monitor {
-				chan="$(PC):LOAD.EGU"
+				chan="$(PC):CPU:LOAD.EGU"
 				clr=14
 				bclr=2
 			}
@@ -1048,7 +1048,7 @@ composite {
 			}
 			"dynamic attribute" {
 				clr="alarm"
-				chan="$(PC):LOAD"
+				chan="$(PC):CPU:LOAD"
 			}
 		}
 	}
@@ -1065,7 +1065,7 @@ oval {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):MEMUSED"
+		chan="$(PC):MEM:USED"
 	}
 }
 text {
@@ -1088,7 +1088,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):MEMAV"
+		chan="$(PC):MEM:TOTAL"
 		clr=29
 		bclr=1
 	}
@@ -1104,7 +1104,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):MEMAV.EGU"
+		chan="$(PC):MEM:TOTAL.EGU"
 		clr=14
 		bclr=2
 	}
@@ -1134,7 +1134,7 @@ oval {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):MEMAV"
+		chan="$(PC):MEM:TOTAL"
 	}
 }
 text {
@@ -1217,7 +1217,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):CPUNICE"
+		chan="$(PC):CPU:NICE"
 		clr=29
 		bclr=1
 	}
@@ -1233,7 +1233,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):CPUSYSTEM"
+		chan="$(PC):CPU:SYSTEM"
 		clr=29
 		bclr=1
 	}
@@ -1249,7 +1249,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):CPUUSER"
+		chan="$(PC):CPU:USER"
 		clr=29
 		bclr=1
 	}
@@ -1265,7 +1265,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):LOAD1MIN"
+		chan="$(PC):SYS:LOAD:1MIN"
 		clr=29
 		bclr=1
 	}
@@ -1281,7 +1281,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):LOAD5MIN"
+		chan="$(PC):SYS:LOAD:5MIN"
 		clr=29
 		bclr=1
 	}
@@ -1297,7 +1297,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):LOAD15MIN"
+		chan="$(PC):SYS:LOAD:15MIN"
 		clr=29
 		bclr=1
 	}
@@ -1313,7 +1313,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):CPUNICE.EGU"
+		chan="$(PC):CPU:NICE.EGU"
 		clr=14
 		bclr=2
 	}
@@ -1328,7 +1328,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):CPUSYSTEM.EGU"
+		chan="$(PC):CPU:SYSTEM.EGU"
 		clr=14
 		bclr=2
 	}
@@ -1343,7 +1343,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):CPUUSER.EGU"
+		chan="$(PC):CPU:USER.EGU"
 		clr=14
 		bclr=2
 	}
@@ -1358,7 +1358,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):LOAD1MIN.EGU"
+		chan="$(PC):SYS:LOAD:1MIN.EGU"
 		clr=14
 		bclr=2
 	}
@@ -1373,7 +1373,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):LOAD5MIN.EGU"
+		chan="$(PC):SYS:LOAD:5MIN.EGU"
 		clr=14
 		bclr=2
 	}
@@ -1388,7 +1388,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):LOAD15MIN.EGU"
+		chan="$(PC):SYS:LOAD:15MIN.EGU"
 		clr=14
 		bclr=2
 	}
@@ -1418,7 +1418,7 @@ oval {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):LOAD1MIN"
+		chan="$(PC):SYS:LOAD:1MIN"
 	}
 }
 oval {
@@ -1444,7 +1444,7 @@ oval {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):LOAD5MIN"
+		chan="$(PC):SYS:LOAD:5MIN"
 	}
 }
 oval {
@@ -1470,7 +1470,7 @@ oval {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):LOAD15MIN"
+		chan="$(PC):SYS:LOAD:15MIN"
 	}
 }
 oval {
@@ -1507,7 +1507,7 @@ oval {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):CPUUSER"
+		chan="$(PC):CPU:USER"
 	}
 }
 oval {
@@ -1533,7 +1533,7 @@ oval {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):CPUSYSTEM"
+		chan="$(PC):CPU:SYSTEM"
 	}
 }
 oval {
@@ -1548,7 +1548,7 @@ oval {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):CPUNICE"
+		chan="$(PC):CPU:NICE"
 	}
 }
 text {
@@ -1571,7 +1571,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):CPUIDLE"
+		chan="$(PC):CPU:IDLE"
 		clr=29
 		bclr=1
 	}
@@ -1587,7 +1587,7 @@ text {
 		height=15
 	}
 	monitor {
-		chan="$(PC):CPUIDLE.EGU"
+		chan="$(PC):CPU:IDLE.EGU"
 		clr=14
 		bclr=2
 	}
@@ -1617,7 +1617,7 @@ oval {
 	}
 	"dynamic attribute" {
 		clr="alarm"
-		chan="$(PC):CPUIDLE"
+		chan="$(PC):CPU:IDLE"
 	}
 }
 polyline {
