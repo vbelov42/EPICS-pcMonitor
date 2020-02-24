@@ -65,7 +65,7 @@ typedef struct { counter_t cnt; avalue_t val; } COUNTER;
 typedef long (*PROCESSFUN)(int iter);
 
 /*static void update_GAUGE (GAUGE *data, counter_t new, double rdt) { data->val = new; } */
-#define update_GAUGE(D,N,F) do { (D)->val = (N); } while(0)
+#define update_GAUGE(D,N,F) do { (D)->val = (N)*(F); } while(0)
 static void update_COUNTER (COUNTER *data, counter_t new, double rdt) {
   if (new < data->cnt) {
     /* counter stepped down, this is unusual */
@@ -751,6 +751,8 @@ epicsExportAddress(dset,devMEMLoad);
 struct mem_info {
   /* config */
   int page_size; /* system memory page size */
+  double scale; /* scaling factor for data, equals 1./unit_size */
+  char units_prefix; /* display units prefix */
   /* internal */
   epicsTimeStamp time;
   char buf[LINE_SIZE];
@@ -784,6 +786,7 @@ static long mem_info_init(int after)
   memset(mem_info, 0, sizeof(struct mem_info));
   mem_info->fp = fp;
   mem_info->page_size = sysconf(_SC_PAGESIZE);
+  mem_info->scale = 1.;
   return 0;
 }
 static long mem_info_init_record(aiRecord *prec)
@@ -813,9 +816,13 @@ static long mem_info_init_record(aiRecord *prec)
     else if (strcmp(name,"SWAPCACH")==0) prec->dpvt = &mem_info->swap_cached.val;
     else prec->dpvt = NULL;
 
-    if (prec->dpvt!=NULL)
+    if (prec->dpvt!=NULL) {
       prec->udf = FALSE;
-    else {
+      if (mem_info->units_prefix != '\0') {
+        j = sizeof(prec->egu)-1; while(j>0) { prec->egu[j] = prec->egu[j-1]; --j; }
+        prec->egu[0] = mem_info->units_prefix;
+      }
+    } else {
       fprintf(stderr, "MemInfo : unknown mode '%s'\n", name);
     }
   } break;
@@ -833,7 +840,14 @@ static int mem_info_parse_options(const char *name, const char *opt)
     if (key[0]=='\0' && val[0]=='\0') {
       break; /* end of options */
     } else if (strcmp(key,"UNITS")==0) {
-      ;
+      if      (val[0]=='1' && val[1]=='\0') mem_info->scale = 1.;
+      else if (val[0]=='K' && val[1]=='\0') mem_info->scale = 1./1024;
+      else if (val[0]=='M' && val[1]=='\0') mem_info->scale = 1./1024/1024;
+      else if (val[0]=='G' && val[1]=='\0') mem_info->scale = 1./1024/1024/1024;
+      else if (val[0]=='T' && val[1]=='\0') mem_info->scale = 1./1024/1024/1024/1024;
+      else if (val[0]=='P' && val[1]=='\0') mem_info->scale = 1./1024/1024/1024/1024/1024;
+      else fprintf(stderr, "MemInfo @%s : unknown UNITS value '%s'\n", name, val);
+      if (mem_info->scale != 1.) mem_info->units_prefix = val[0];
     } else {
       fprintf(stderr, "MemInfo @%s : unknown option '%s'\n", name, key);
     }
@@ -845,7 +859,8 @@ static long mem_info_process(int iter)
 {
   int i;
   epicsTimeStamp now; double dt;
-  char field[16]; unsigned long val; counter_t cnt;
+  char field[16]; unsigned long val;
+  double f = (1<<10)*mem_info->scale; /* read values are in kB */
   if (mem_info==NULL)
     return -1;
   rewind(mem_info->fp);
@@ -855,16 +870,15 @@ static long mem_info_process(int iter)
   for(i=0; fgets(mem_info->buf,sizeof(mem_info->buf),mem_info->fp)!=NULL; i++) {
     int n = sscanf(mem_info->buf, "%15s %lu", field, &val);
     if (n < 2) continue; /* no value read */
-    cnt = val; /* cnt <<= 10; read values are in kB */
-    if      (strcmp(field,"MemTotal:")==0)   update_GAUGE(&mem_info->mem_total, cnt, 1.);
-    else if (strcmp(field,"MemFree:")==0)    update_GAUGE(&mem_info->mem_free, cnt, 1.);
-    else if (strcmp(field,"MemShared:")==0)  update_GAUGE(&mem_info->mem_shared, cnt, 1.); /* */
-    else if (strcmp(field,"Shmem:")==0)      update_GAUGE(&mem_info->mem_shared, cnt, 1.); /* since 2.6.32 */
-    else if (strcmp(field,"Buffers:")==0)    update_GAUGE(&mem_info->mem_buffers, cnt, 1.);
-    else if (strcmp(field,"Cached:")==0)     update_GAUGE(&mem_info->mem_cached, cnt, 1.);
-    else if (strcmp(field,"SwapTotal:")==0)  update_GAUGE(&mem_info->swap_total, cnt, 1.);
-    else if (strcmp(field,"SwapFree:")==0)   update_GAUGE(&mem_info->swap_free, cnt, 1.);
-    else if (strcmp(field,"SwapCached:")==0) update_GAUGE(&mem_info->swap_cached, cnt, 1.);
+    if      (strcmp(field,"MemTotal:")==0)   update_GAUGE(&mem_info->mem_total, val, f);
+    else if (strcmp(field,"MemFree:")==0)    update_GAUGE(&mem_info->mem_free, val, f);
+    else if (strcmp(field,"MemShared:")==0)  update_GAUGE(&mem_info->mem_shared, val, f); /* */
+    else if (strcmp(field,"Shmem:")==0)      update_GAUGE(&mem_info->mem_shared, val, f); /* since 2.6.32 */
+    else if (strcmp(field,"Buffers:")==0)    update_GAUGE(&mem_info->mem_buffers, val, f);
+    else if (strcmp(field,"Cached:")==0)     update_GAUGE(&mem_info->mem_cached, val, f);
+    else if (strcmp(field,"SwapTotal:")==0)  update_GAUGE(&mem_info->swap_total, val, f);
+    else if (strcmp(field,"SwapFree:")==0)   update_GAUGE(&mem_info->swap_free, val, f);
+    else if (strcmp(field,"SwapCached:")==0) update_GAUGE(&mem_info->swap_cached, val, f);
   }
   update_GAUGE(&mem_info->mem_used, mem_info->mem_total.val - mem_info->mem_free.val, 1.);
   update_GAUGE(&mem_info->swap_used, mem_info->swap_total.val - mem_info->swap_free.val, 1.);
@@ -918,6 +932,8 @@ typedef struct {
 } disk_stat;
 struct disks_info {
   /* config */
+  double scale; /* scaling factor for data, equals 1./unit_size */
+  char units_prefix; /* display units prefix */
   /* internal */
   epicsTimeStamp time;
   char buf[LINE_SIZE];
@@ -1065,6 +1081,7 @@ static long disks_info_init(int after)
   disks_info = (struct disks_info*)malloc(sizeof(struct disks_info));
   memset(disks_info, 0, sizeof(struct disks_info));
   disks_info->fp = fp;
+  disks_info->scale = 1.;
   return 0;
 }
 static disk_stat* disks_info_parse_options(const char *name, const char *opt)
@@ -1074,6 +1091,15 @@ static disk_stat* disks_info_parse_options(const char *name, const char *opt)
     opt = parse_options(opt, key, sizeof(key), val, sizeof(val));
     if (key[0]=='\0' && val[0]=='\0') {
       break; /* end of options */
+    } else if (strcmp(key,"UNITS")==0 && strcmp(name,"PROC")==0) {
+      if      (val[0]=='1' && val[1]=='\0') disks_info->scale = 1.;
+      else if (val[0]=='K' && val[1]=='\0') disks_info->scale = 1./1024;
+      else if (val[0]=='M' && val[1]=='\0') disks_info->scale = 1./1024/1024;
+      else if (val[0]=='G' && val[1]=='\0') disks_info->scale = 1./1024/1024/1024;
+      else if (val[0]=='T' && val[1]=='\0') disks_info->scale = 1./1024/1024/1024/1024;
+      else if (val[0]=='P' && val[1]=='\0') disks_info->scale = 1./1024/1024/1024/1024/1024;
+      else fprintf(stderr, "DiskInfo @%s : unknown UNITS value '%s'\n", name, val);
+      if (disks_info->scale != 1.) disks_info->units_prefix = val[0];
     } else if (strcmp(key,"DEV")==0 && val[0]!='\0') {
       disk = get_disk_stat(val);
       if (check_disk_presence(val)==0)
@@ -1099,8 +1125,9 @@ static long disks_info_init_record(aiRecord *prec)
     int j, k; char name[16];
     name[0] = '\0'; j = 0; k = sscanf(opt, "%15s %n", name, &j); opt += j;
 
-    if      (strcmp(name,"PROC")==0)
-      prec->dpvt = disks_info_process;
+    if      (strcmp(name,"PROC")==0) {
+      disk_stat *disk = disks_info_parse_options(name, opt);
+      prec->dpvt = disks_info_process; }
     else if (strcmp(name,"DISK_RDOP")==0) {
       disk_stat *disk = disks_info_parse_options(name, opt);
       if (disk != NULL)
@@ -1142,6 +1169,10 @@ static long disks_info_init_record(aiRecord *prec)
 
     if (prec->dpvt != NULL) {
       prec->udf = FALSE;
+      if (disks_info->units_prefix != '\0') {
+        j = sizeof(prec->egu)-1; while(j>0) { prec->egu[j] = prec->egu[j-1]; --j; }
+        prec->egu[0] = disks_info->units_prefix;
+      }
     } else {
       fprintf(stderr, "DiskInfo : unknown mode '%s'\n", name);
     }
@@ -1186,12 +1217,12 @@ static long disks_info_process(int iter)
         disk->write_bytes.cnt = cnt[3];
         disk->io_time.cnt = cnt[4];
       } else {
-        double rdt = 1./dt;
+        double rdt = disks_info->scale/dt;
         update_COUNTER(&disk->read_ops, cnt[0], rdt);
         update_COUNTER(&disk->read_bytes, cnt[1], rdt);
         update_COUNTER(&disk->write_ops, cnt[2], rdt);
         update_COUNTER(&disk->write_bytes, cnt[3], rdt);
-        rdt *= 1e-3; /* ms to s */
+        rdt = 1e-3/dt; /* ms to s */
         update_COUNTER(&disk->io_time, cnt[4], rdt);
       }
     }
@@ -1207,11 +1238,11 @@ static long disks_info_process(int iter)
       }
       if (disk->fsid == st.f_fsid || disk->fsid == 0) {
         /* everything is good or new disk */
-        double f = 1.*st.f_frsize/1024;
-        update_GAUGE(&disk->df_total, st.f_blocks*f, 1.);
-        update_GAUGE(&disk->df_used, (st.f_blocks-st.f_bfree)*f, 1.);
-        update_GAUGE(&disk->df_reserved, (st.f_bfree-st.f_bavail)*f, 1.);
-        update_GAUGE(&disk->df_free, st.f_bavail*f, 1.);
+        double f = disks_info->scale*st.f_frsize;
+        update_GAUGE(&disk->df_total, st.f_blocks, f);
+        update_GAUGE(&disk->df_used, (st.f_blocks-st.f_bfree), f);
+        update_GAUGE(&disk->df_reserved, (st.f_bfree-st.f_bavail), f);
+        update_GAUGE(&disk->df_free, st.f_bavail, f);
         if (disk->fsid == 0) disk->fsid = st.f_fsid;
       } else {
         /* probably disk is unmounted now */
@@ -1263,6 +1294,8 @@ typedef struct {
 } if_stat;
 struct net_info {
   /* config */
+  double scale; /* scaling factor for data, equals 1./unit_size */
+  char units_prefix; /* display units prefix */
   /* internal */
   epicsTimeStamp time;
   char buf[LINE_SIZE];
@@ -1346,6 +1379,7 @@ static long net_info_init(int after)
   net_info = (struct net_info*)malloc(sizeof(struct net_info));
   memset(net_info, 0, sizeof(struct net_info));
   net_info->fp = fp;
+  net_info->scale = 1.;
   return 0;
 }
 static if_stat* net_info_parse_options(const char *name, const char *opt)
@@ -1355,6 +1389,15 @@ static if_stat* net_info_parse_options(const char *name, const char *opt)
     opt = parse_options(opt, key, sizeof(key), val, sizeof(val));
     if (key[0]=='\0' && val[0]=='\0') {
       break; /* end of options */
+    } else if (strcmp(key,"UNITS")==0 && strcmp(name,"PROC")==0) {
+      if      (val[0]=='1' && val[1]=='\0') net_info->scale = 1.;
+      else if (val[0]=='K' && val[1]=='\0') net_info->scale = 1./1024;
+      else if (val[0]=='M' && val[1]=='\0') net_info->scale = 1./1024/1024;
+      else if (val[0]=='G' && val[1]=='\0') net_info->scale = 1./1024/1024/1024;
+      else if (val[0]=='T' && val[1]=='\0') net_info->scale = 1./1024/1024/1024/1024;
+      else if (val[0]=='P' && val[1]=='\0') net_info->scale = 1./1024/1024/1024/1024/1024;
+      else fprintf(stderr, "NetInfo @%s : unknown UNITS value '%s'\n", name, val);
+      if (net_info->scale != 1.) net_info->units_prefix = val[0];
     } else if (strcmp(key,"DEV")==0 && val[0]!='\0') {
       iface = get_if_stat(val);
       if (check_iface_presence(val)==0)
@@ -1378,8 +1421,9 @@ static long net_info_init_record(aiRecord *prec)
     int j, k; char name[16];
     name[0] = '\0'; j = 0; k = sscanf(opt, "%15s %n", name, &j); opt += j;
 
-    if      (strcmp(name,"PROC")==0)
-      prec->dpvt = net_info_process;
+    if      (strcmp(name,"PROC")==0) {
+      if_stat *iface = net_info_parse_options(name, opt);
+      prec->dpvt = net_info_process; }
     else if (strcmp(name,"NET_RXPC")==0) {
       if_stat *iface = net_info_parse_options(name, opt);
       if (iface != NULL)
@@ -1401,6 +1445,10 @@ static long net_info_init_record(aiRecord *prec)
 
     if (prec->dpvt != NULL) {
       prec->udf = FALSE;
+      if (net_info->units_prefix != '\0') {
+        j = sizeof(prec->egu)-1; while(j>0) { prec->egu[j] = prec->egu[j-1]; --j; }
+        prec->egu[0] = net_info->units_prefix;
+      }
     } else {
       fprintf(stderr, "NetInfo : unknown mode '%s'\n", name);
     }
@@ -1440,7 +1488,7 @@ static long net_info_process(int iter)
         iface->trans_packets.cnt = cnt[3];
         iface->trans_bytes.cnt = cnt[2];
       } else {
-        double rdt = 1./dt;
+        double rdt = net_info->scale/dt;
         update_COUNTER(&iface->recv_packets, cnt[1], rdt);
         update_COUNTER(&iface->recv_bytes, cnt[0], rdt);
         update_COUNTER(&iface->trans_packets, cnt[3], rdt);
