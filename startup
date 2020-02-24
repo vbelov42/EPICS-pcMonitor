@@ -19,6 +19,7 @@ dbLoadDatabase("\${TOP}/dbd/${program}.dbd", 0, 0)
 ${program}_registerRecordDeviceDriver pdbbase
 
 ## Load record instances
+dbLoadRecords("\${TOP}/db/pcMonitor-ioc.template","IOC=\${IOC}")
 dbLoadTemplate("\${TOP}/iocBoot/ioc/pcMonitor.substitutions","IOC=\${IOC}")
 
 iocInit

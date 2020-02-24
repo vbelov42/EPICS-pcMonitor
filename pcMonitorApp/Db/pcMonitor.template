@@ -4,36 +4,6 @@
 #
 
 #-------------------------------------------------
-#                   IOC info
-#-------------------------------------------------
-
-record(calcout, "$(IOC):HEARTBEAT")
-{
-    field(DESC, "IOC heartbeat, 1Hz counter")
-    field(SCAN, "1 second")
-    field(CALC, "(A<2147483647)?A+1:1")
-    field(INPA, "$(P):HEARTBEAT")
-    field(EGU,  "ticks")
-    field(PREC, "0")
-}
-record(calc, "$(IOC):HEARTBEAT:99")
-{
-    field(DESC, "IOC heartbeat mod 99")
-    field(SCAN, "1 second")
-    field(CALC, "A%100")
-    field(INPA, "$(P):HEARTBEAT.VAL .NPP.NMS")
-    field(EGU,  "ticks")
-    field(PREC, "0")
-}
-record(stringin, "$(IOC):EpicsVersion") {
-    field(DESC, "EPICS Base Version")
-    field(DTYP, "getenv")
-    field(INP, "@EPICS_VERSION_FULL")
-    field(PINI, "YES")
-    field(DISP, 1)
-}
-
-#-------------------------------------------------
 #                   SYSTEM info
 #-------------------------------------------------
 

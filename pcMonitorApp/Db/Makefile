@@ -13,6 +13,7 @@ include $(TOP)/configure/CONFIG
 DB += pcMonitor.template
 DB += pcMonitor-disk.template
 DB += pcMonitor-net.template
+DB += pcMonitor-ioc.template
 
 #----------------------------------------------------
 # If <anyname>.db template is not named <anyname>*.template add
