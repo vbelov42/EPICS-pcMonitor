@@ -1,12 +1,15 @@
-#/bin/bash
+#!/bin/bash
 
 program="pcMonitor"
 filename=`readlink -f "${BASH_SOURCE[0]}"`
 basedir=`dirname "${filename}"`
-binary="$basedir/bin/linux-x86_64/${program}"
+binary="${basedir}/bin/${EPICS_HOST_ARCH}/${program}"
 
-"${binary}" <<__EOF__
-#
+tmpfile=`mktemp startup-XXXXXX`
+trap "{ ret=$?; rm -f \"$tmpfile\"; exit $ret; }" EXIT
+cat >"$tmpfile" <<__EOF__
+
+# Begin of EPICS commands to start application
 epicsEnvSet("IOC","${program}")
 epicsEnvSet("TOP","${basedir}")
 epicsEnvSet("EPICS_BASE","${EPICS_BASE}")
@@ -16,9 +19,11 @@ dbLoadDatabase("\${TOP}/dbd/${program}.dbd", 0, 0)
 ${program}_registerRecordDeviceDriver pdbbase
 
 ## Load record instances
-dbLoadRecords("\${TOP}/db/pcMonitor.template","BOOTPC=sys")
+dbLoadTemplate("\${TOP}/iocBoot/ioc/pcMonitor.substitutions","IOC=\${IOC}")
 
 iocInit
 
+# end of predefined EPICS commands
 __EOF__
 
+"${binary}" "$tmpfile"
